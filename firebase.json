@@ -1,10 +1,13 @@
 {
   "hosting": {
-    "site": "tambola-premium", 
+    "site": "tambola-premium",
     "public": "public",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [
       { "source": "**", "destination": "/player_join.html" }
     ]
+  },
+  "functions": {
+    "source": "functions"
   }
 }
