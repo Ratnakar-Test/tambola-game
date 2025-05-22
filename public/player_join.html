@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tambola Game - Player Sign In / Join</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@latest/dist/full.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+        }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+        .confetti-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: -1; overflow: hidden; }
+        .confetti { position: absolute; width: 10px; height: 20px; background-color: oklch(var(--p)); opacity: 0.7; animation: fall 5s linear infinite; }
+        .confetti.c2 { background-color: oklch(var(--s)); animation-duration: 6s; }
+        .confetti.c3 { background-color: oklch(var(--a)); animation-duration: 4s; }
+        .confetti.c4 { background-color: oklch(var(--n)); animation-duration: 7s; }
+        @keyframes fall { 0% { transform: translateY(-10vh) rotate(0deg); } 100% { transform: translateY(110vh) rotate(720deg); } }
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen flex flex-col" x-data="playerJoin()">
+    <div class="confetti-container" aria-hidden="true">
+        <template x-for="i in 50" :key="i">
+            <div class="confetti"
+                 :class="{ 'c1': i % 4 === 0, 'c2': i % 4 === 1, 'c3': i % 4 === 2, 'c4': i % 4 === 3 }"
+                 :style="{ left: Math.random() * 100 + 'vw', animationDelay: Math.random() * 5 + 's', transform: 'scale(' + (Math.random() * 0.5 + 0.5) + ')' }">
+            </div>
+        </template>
+    </div>
+
+    <nav class="navbar bg-base-100 shadow-lg sticky top-0 z-50">
+        <div class="flex-1">
+            <a class="btn btn-ghost normal-case text-xl">
+                <i class="fas fa-dice-d6 mr-2 text-primary"></i>Tambola Game
+            </a>
+        </div>
+        <div class="flex-none">
+            <div class="dropdown dropdown-end">
+                <label tabindex="0" class="btn btn-ghost btn-circle" aria-label="Theme selector">
+                    <i class="fas fa-palette"></i>
+                </label>
+                <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[100] p-2 shadow bg-base-100 rounded-box w-52">
+                    <template x-for="theme in themes" :key="theme">
+                        <li><a @click="setTheme(theme, $event)" x-text="theme.charAt(0).toUpperCase() + theme.slice(1)"></a></li>
+                    </template>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <main class="flex-grow flex items-center justify-center p-4">
+        <div class="card w-full max-w-md bg-base-100 shadow-xl">
+            <div class="card-body">
+                <h2 class="card-title text-2xl mb-4 text-center">
+                    <i class="fas fa-ticket-alt text-secondary mr-2"></i>
+                    <span x-text="currentUser ? 'Enter Game Details' : 'Player Sign In / Join'"></span>
+                </h2>
+
+                <div x-show="!currentUser && !emailSent && !isSigningIn" class="form-control mb-4">
+                    <label class="label"><span class="label-text">Your Email Address</span></label>
+                    <input type="email" x-model="email" placeholder="Enter your email to sign in" class="input input-bordered w-full" :disabled="isLoading" />
+                    <p x-show="errors.email" x-text="errors.email" class="text-error text-xs mt-1"></p>
+                </div>
+
+                <div x-show="emailSent && !currentUser && !isSigningIn" class="alert alert-info shadow-lg my-4">
+                    <div>
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <span>Sign-in link sent to <strong x-text="email"></strong>. Check your inbox (and spam folder) and click the link. You'll be returned to this page.</span>
+                    </div>
+                </div>
+
+                <div x-show="currentUser && !isSigningIn">
+                    <div class="mb-2 p-2 border border-success rounded-md bg-success/10 text-success-content text-sm">
+                        Signed in as: <strong x-text="currentUser.email"></strong>
+                    </div>
+                    <div class="form-control mb-4">
+                        <label class="label"><span class="label-text">Your Player Name</span></label>
+                        <input type="text" x-model="playerName" placeholder="Enter your display name" class="input input-bordered w-full" :disabled="isLoading"/>
+                        <p x-show="errors.playerName" x-text="errors.playerName" class="text-error text-xs mt-1"></p>
+                    </div>
+
+                    <div class="form-control mb-6">
+                        <label class="label"><span class="label-text">Room ID</span></label>
+                        <input type="text" x-model="roomId" placeholder="Enter Room ID from Admin" class="input input-bordered w-full" :disabled="isLoading"/>
+                        <p x-show="errors.roomId" x-text="errors.roomId" class="text-error text-xs mt-1"></p>
+                    </div>
+                </div>
+
+                <div class="card-actions justify-center mt-2">
+                    <button x-show="!currentUser && !emailSent && !isSigningIn" @click="sendSignInLink" class="btn btn-primary w-full" :disabled="isLoading">
+                        <span x-show="isLoading" class="loading loading-spinner loading-xs"></span>
+                        <i x-show="!isLoading" class="fas fa-envelope mr-2"></i>
+                        Send Sign-In Link
+                    </button>
+
+                    <button x-show="currentUser && !isSigningIn" @click="proceedToGame" class="btn btn-success w-full" :disabled="isLoading">
+                        <span x-show="isLoading" class="loading loading-spinner loading-xs"></span>
+                        <i x-show="!isLoading" class="fas fa-gamepad mr-2"></i>
+                        Join Game Room
+                    </button>
+                </div>
+
+                <div x-show="message" class="mt-4 p-3 rounded-md text-center text-sm"
+                     :class="{ 'bg-success text-success-content': messageType === 'success',
+                               'bg-error text-error-content': messageType === 'error',
+                               'bg-info text-info-content': messageType === 'info' }"
+                     x-text="message">
+                </div>
+
+                 <div x-show="isSigningIn" class="mt-4 text-center">
+                    <span class="loading loading-dots loading-lg"></span>
+                    <p class="text-sm">Finalizing sign-in, please wait...</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="footer footer-center p-4 bg-base-300 text-base-content">
+        <div>
+            <p>Copyright © <span x-text="new Date().getFullYear()"></span> - Tambola Game</p>
+        </div>
+    </footer>
+
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script>
+      // =================================================================================
+      // IMPORTANT: REPLACE WITH YOUR WEB APP'S FIREBASE CONFIGURATION
+      // =================================================================================
+      const firebaseConfig = {
+    apiKey: "AIzaSyDeQ3YkvRLvPFnpTPz-aDyh9Yr6JNLqWF0",
+    authDomain: "tambola-premium.firebaseapp.com",
+    projectId: "tambola-premium",
+    storageBucket: "tambola-premium.firebasestorage.app",
+    messagingSenderId: "431036089573",
+    appId: "1:431036089573:web:523500fb519d887535800c",
+    measurementId: "G-EQHHTY8QKE"
+
+      };
+      // =================================================================================
+
+      // Initialize Firebase
+      if (!firebase.apps.length) {
+          firebase.initializeApp(firebaseConfig);
+      }
+      const auth = firebase.auth(); // Firebase Auth instance
+    </script>
+
+    <script>
+        function playerJoin() {
+            return {
+                playerName: '',
+                roomId: '',
+                email: '',
+                emailSent: false,
+                currentUser: null,
+                isLoading: false,
+                isSigningIn: false,
+
+                message: '',
+                messageType: '',
+                errors: { email: '', playerName: '', roomId: '' },
+                themes: [
+                    "light", "dark", "cupcake", "bumblebee", "emerald", "corporate",
+                    "synthwave", "retro", "cyberpunk", "valentine", "halloween",
+                    "garden", "forest", "aqua", "lofi", "pastel", "fantasy",
+                    "wireframe", "black", "luxury", "dracula", "cmyk", "autumn",
+                    "business", "acid", "lemonade", "night", "coffee", "winter"
+                ],
+
+                init() {
+                    const savedTheme = localStorage.getItem('theme') || 'light';
+                    this.setTheme(savedTheme, null, false);
+
+                    const urlParams = new URLSearchParams(window.location.search);
+                    if (urlParams.has('roomId')) {
+                        this.roomId = urlParams.get('roomId');
+                    }
+                     // Clear any admin-specific localStorage items if a player is joining
+                    localStorage.removeItem('adminName'); // Example, if admin also uses localStorage
+
+                    // Attempt to complete sign-in if a link is in the URL
+                    if (auth.isSignInWithEmailLink(window.location.href)) {
+                        this.isSigningIn = true;
+                        this.isLoading = true;
+                        this.message = 'Completing sign-in... Please wait.';
+                        this.messageType = 'info';
+                        let emailForSignIn = window.localStorage.getItem('emailForSignIn');
+
+                        if (!emailForSignIn) {
+                            // This can happen if the user opens the link on a different browser/device.
+                            // It's more secure to prompt again. Firebase docs recommend this.
+                            // However, prompting can be disruptive if the user is on the same device.
+                            // For simplicity here, if email is not in localStorage, we'll show an error.
+                            // In a production app, you might guide the user to re-enter their email on this page.
+                            this.message = "Your email for sign-in was not found. Please try sending the link again from this browser.";
+                            this.messageType = 'error';
+                            this.isLoading = false;
+                            this.isSigningIn = false;
+                            if (window.history && window.history.replaceState) { // Clean URL
+                                window.history.replaceState(null, '', window.location.pathname);
+                            }
+                            return;
+                        }
+
+                        auth.signInWithEmailLink(emailForSignIn, window.location.href)
+                            .then((result) => {
+                                window.localStorage.removeItem('emailForSignIn');
+                                this.currentUser = result.user;
+                                this.email = result.user.email; // Pre-fill email
+                                this.message = `Successfully signed in as ${result.user.email}! Please enter your player name and Room ID to join.`;
+                                this.messageType = 'success';
+                                if (window.history && window.history.replaceState) {
+                                    window.history.replaceState(null, '', window.location.pathname);
+                                }
+                            })
+                            .catch((error) => {
+                                console.error("Error signing in with email link:", error);
+                                this.message = `Error signing in: ${error.message}. The link might be invalid, expired, or the email might not match. Please try sending a new link.`;
+                                this.messageType = 'error';
+                                window.localStorage.removeItem('emailForSignIn');
+                                if (window.history && window.history.replaceState) { // Clean URL
+                                    window.history.replaceState(null, '', window.location.pathname);
+                                }
+                            })
+                            .finally(() => {
+                                this.isLoading = false;
+                                this.isSigningIn = false;
+                                this.emailSent = false; // Reset emailSent state
+                            });
+                    } else {
+                        // If not a sign-in link, check current auth state (e.g., if user is already signed in)
+                        auth.onAuthStateChanged((user) => {
+                            if (this.isSigningIn) return; // Don't interfere if sign-in link processing is happening
+
+                            if (user) {
+                                this.currentUser = user;
+                                this.email = user.email;
+                                // No automatic message here, let user proceed or UI show "Logged in as..."
+                            } else {
+                                this.currentUser = null;
+                            }
+                        });
+                    }
+                },
+
+                setTheme(themeName, event = null, closeDropdown = true) {
+                    document.documentElement.setAttribute('data-theme', themeName);
+                    localStorage.setItem('theme', themeName);
+                    if (closeDropdown && event && event.target) {
+                        const anchorElement = event.target;
+                        const dropdownRoot = anchorElement.closest('.dropdown');
+                        const dropdownTriggerLabel = dropdownRoot?.querySelector('label[tabindex="0"]');
+                        setTimeout(() => {
+                            if (document.activeElement && dropdownRoot && dropdownRoot.contains(document.activeElement)) {
+                                if (typeof document.activeElement.blur === 'function') document.activeElement.blur();
+                            }
+                            if (dropdownTriggerLabel && typeof dropdownTriggerLabel.blur === 'function') dropdownTriggerLabel.blur();
+                        }, 0);
+                    }
+                },
+
+                validateInput(fieldsToValidate = ['email', 'playerName', 'roomId']) {
+                    this.errors = { email: '', playerName: '', roomId: '' };
+                    let isValid = true;
+
+                    if (fieldsToValidate.includes('email')) {
+                        if (!this.email.trim()) {
+                            this.errors.email = 'Email is required.'; isValid = false;
+                        } else if (!/^\S+@\S+\.\S+$/.test(this.email.trim())) {
+                            this.errors.email = 'Please enter a valid email address.'; isValid = false;
+                        }
+                    }
+                    if (fieldsToValidate.includes('playerName') && !this.playerName.trim()) {
+                        this.errors.playerName = 'Player name is required.'; isValid = false;
+                    }
+                    if (fieldsToValidate.includes('roomId') && !this.roomId.trim()) {
+                        this.errors.roomId = 'Room ID is required.'; isValid = false;
+                    }
+                    return isValid;
+                },
+
+                sendSignInLink() {
+                    if (!this.validateInput(['email'])) { return; }
+                    this.isLoading = true;
+                    this.message = ''; this.messageType = '';
+
+                    const actionCodeSettings = {
+                        url: window.location.href.split('?')[0], // Use base URL of current page for redirect
+                        handleCodeInApp: true,
+                    };
+
+                    auth.sendSignInLinkToEmail(this.email, actionCodeSettings)
+                        .then(() => {
+                            window.localStorage.setItem('emailForSignIn', this.email);
+                            this.emailSent = true;
+                            this.message = 'Sign-in link sent to your email! Please check your inbox (and spam folder). Click the link to return here and sign in.';
+                            this.messageType = 'success';
+                        })
+                        .catch((error) => {
+                            console.error("Error sending sign-in link:", error);
+                            this.message = `Error sending link: ${error.code} - ${error.message}`;
+                            this.messageType = 'error';
+                        })
+                        .finally(() => {
+                            this.isLoading = false;
+                        });
+                },
+
+                proceedToGame() {
+                    this.message = '';
+                    if (!this.currentUser) {
+                        this.message = 'You must be signed in to join a game. Please use the link sent to your email, or send a new one.';
+                        this.messageType = 'error';
+                        return;
+                    }
+                    if (!this.validateInput(['playerName', 'roomId'])) { return; }
+
+                    this.isLoading = true;
+                    this.message = `Setting up to join room ${this.roomId} as ${this.playerName}...`;
+                    this.messageType = 'info';
+
+                    localStorage.setItem('playerName', this.playerName);
+                    localStorage.setItem('roomId', this.roomId);
+                    localStorage.setItem('firebaseUserId', this.currentUser.uid);
+                    localStorage.setItem('firebaseUserEmail', this.currentUser.email);
+
+                    // For now, we don't handle tickets on this page for the premium version.
+                    // player_game.html will be responsible for fetching/receiving tickets
+                    // from the server (Firestore/Cloud Functions) after authenticating.
+                    // So, we remove mock ticket generation from here.
+                    localStorage.removeItem('playerTicket'); // Remove old mock ticket if any
+
+                    setTimeout(() => {
+                        window.location.href = `player_game.html?playerName=${encodeURIComponent(this.playerName)}&roomId=${encodeURIComponent(this.roomId)}`;
+                        // Note: playerName in URL is for display convenience; firebaseUserId will be the true identifier.
+                        this.isLoading = false;
+                    }, 1500);
+                },
+
+                // Removed mock ticket helper functions (getRandomNum, ensureFiveNumbersPerRow, finalizeTicketNumbers)
+                // as ticket generation will move server-side for the premium version.
+            }
+        }
+    </script>
+</body>
+</html>

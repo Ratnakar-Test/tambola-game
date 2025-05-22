@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tambola Admin - Game Room</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@latest/dist/full.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            padding-bottom: 160px; /* For bottom nav */
+        }
+        .flex-grow { flex-grow: 1; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+        .drawer-side > *:not(label) { overflow-y: auto; }
+        .number-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+            gap: 0.5rem;
+            max-width: 800px;
+            margin: auto;
+        }
+        .number-cell {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            aspect-ratio: 1 / 1;
+            border-radius: 0.375rem; /* rounded-md */
+            font-weight: bold;
+            transition: background-color 0.3s, color 0.3s, transform 0.3s, box-shadow 0.3s;
+        }
+        .number-cell.called {
+            background-color: oklch(var(--p));
+            color: oklch(var(--pc));
+            transform: scale(1.1);
+            box-shadow: 0 0 10px oklch(var(--p));
+        }
+        .number-cell.latest { animation: pulse 1s infinite; }
+        @keyframes pulse {
+            0% { transform: scale(1.1); box-shadow: 0 0 10px oklch(var(--p)); }
+            50% { transform: scale(1.25); box-shadow: 0 0 18px oklch(var(--p)); }
+            100% { transform: scale(1.1); box-shadow: 0 0 10px oklch(var(--p)); }
+        }
+        .bottom-nav-controls-container {
+            position: fixed; bottom: 0; left: 0; right: 0;
+            background-color: oklch(var(--b1));
+            padding: 0.5rem; box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+            z-index: 45; display: flex; flex-direction: column; gap: 0.5rem;
+        }
+        .control-bar {
+            display: flex; flex-wrap: wrap; gap: 0.5rem;
+            align-items: center; justify-content: space-around;
+            width: 100%; padding: 0.25rem 0;
+        }
+        .control-bar:not(:last-child) {
+            border-bottom: 1px solid oklch(var(--b3));
+            padding-bottom: 0.75rem; margin-bottom: 0.25rem;
+        }
+        .game-message-popup {
+            position: fixed;
+            top: 80px; /* Below navbar */
+            right: 1rem;
+            padding: 0.75rem 1rem;
+            border-radius: 0.375rem; /* rounded-md */
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            font-size: 0.875rem; /* text-sm */
+            z-index: 1000; /* High z-index */
+            max-width: 300px;
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+<body x-data="adminRoom()">
+    <div class="drawer lg:drawer-open">
+        <input id="my-drawer" type="checkbox" class="drawer-toggle" x-model="isDrawerOpen" />
+        <div class="drawer-content flex flex-col bg-base-200">
+            <nav class="navbar bg-base-100 shadow-lg sticky top-0 z-30">
+                <div class="flex-none">
+                    <label for="my-drawer" class="btn btn-square btn-ghost lg:hidden" aria-label="Open menu">
+                        <i class="fas fa-bars text-xl"></i>
+                    </label>
+                </div>
+                <div class="flex-1">
+                    <a class="btn btn-ghost normal-case text-xl">Tambola Admin Panel</a>
+                </div>
+                <div class="flex-none">
+                     <span class="mr-2 hidden sm:inline">Room ID: <strong x-text="roomId"></strong></span>
+                    <div class="dropdown dropdown-end ml-2">
+                        <label tabindex="0" class="btn btn-ghost btn-circle indicator">
+                            <i class="fas fa-bell text-xl"></i>
+                            <template x-if="notifications.length > 0">
+                                <span class="indicator-item badge badge-secondary badge-sm" x-text="notifications.length"></span>
+                            </template>
+                        </label>
+                        <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[50] p-2 shadow bg-base-100 rounded-box w-64 sm:w-80 max-h-96 overflow-y-auto">
+                            <template x-if="notifications.length === 0">
+                                <li class="p-2 text-center text-sm text-base-content/70">No new notifications</li>
+                            </template>
+                            <template x-for="notification in notifications" :key="notification.id">
+                                <li>
+                                    <a @click="handleNotificationClick(notification)" class="whitespace-normal text-xs p-2 hover:bg-base-200">
+                                        <div class="flex flex-col w-full">
+                                            <div class="font-semibold" x-text="notification.type"></div>
+                                            <div class="text-base-content/80" x-text="notification.message"></div>
+                                            <div class="text-xs opacity-60 mt-1 self-end" x-text="new Date(notification.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })"></div>
+                                        </div>
+                                    </a>
+                                </li>
+                            </template>
+                            <template x-if="notifications.length > 0">
+                                <div class="divider my-1"></div>
+                                <li><a @click="clearAllNotifications()" class="text-xs text-center text-error p-2 hover:bg-error hover:text-error-content">Clear All</a></li>
+                            </template>
+                        </ul>
+                    </div>
+                    <div class="dropdown dropdown-end">
+                        <label tabindex="0" class="btn btn-ghost btn-circle" aria-label="Theme selector">
+                            <i class="fas fa-palette"></i>
+                        </label>
+                        <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[50] p-2 shadow bg-base-100 rounded-box w-52">
+                            <template x-for="theme in themes" :key="theme">
+                                <li><a @click="setTheme(theme, $event)" x-text="theme.charAt(0).toUpperCase() + theme.slice(1)"></a></li>
+                            </template>
+                        </ul>
+                    </div>
+                     <button @click="logoutAdmin" class="btn btn-ghost btn-circle" aria-label="Logout Admin">
+                        <i class="fas fa-sign-out-alt text-xl"></i>
+                    </button>
+                </div>
+            </nav>
+
+            <main class="flex-grow p-4 overflow-y-auto">
+                <div x-show="currentView === 'home'" x-transition>
+                    <h2 class="text-2xl font-bold mb-1">Game Room (<span x-text="adminName"></span>)</h2>
+                    <div class="mb-3 text-center">Status: <span class="badge badge-lg"
+                        :class="{
+                            'badge-neutral': gameStatus === 'idle' || gameStatus === 'loading' || gameStatus === 'disconnected',
+                            'badge-success': gameStatus === 'running',
+                            'badge-warning': gameStatus === 'paused',
+                            'badge-error': gameStatus === 'stopped' || gameStatus === 'error'
+                        }"
+                        x-text="gameStatus"></span>
+                    </div>
+
+                    <div class="text-center my-6" x-show="latestCalledNumber !== null">
+                        <span class="label-text">Last Called:</span>
+                        <div class="badge badge-lg badge-secondary text-2xl p-4" x-text="latestCalledNumber"></div>
+                        <div x-show="latestCalledPhrase" class="mt-1 text-sm italic text-accent" x-text="latestCalledPhrase"></div>
+                    </div>
+                    <div class="text-center my-6" x-show="latestCalledNumber === null && gameStatus === 'running'">
+                        <span class="label-text">Game started. Call the first number!</span>
+                    </div>
+
+                    <div class="number-grid p-2 bg-base-100 rounded-lg shadow">
+                        <template x-for="numObj in numbers" :key="numObj.number">
+                            <div class="number-cell bg-base-300" :class="{ 'called': numObj.called, 'latest': numObj.number === latestCalledNumber && numObj.called }" x-text="numObj.number"></div>
+                        </template>
+                    </div>
+                </div>
+
+                <div x-show="currentView === 'players'" x-transition> </div>
+                <div x-show="currentView === 'ticketRequests'" x-transition> </div>
+                <div x-show="currentView === 'prizeClaims'" x-transition> </div>
+                <div x-show="currentView === 'winners'" x-transition> </div>
+                <div x-show="currentView === 'rules'" x-transition class="space-y-6"> </div>
+                <div x-show="currentView === 'qrCode'" x-transition class="text-center"> </div>
+                <div x-show="currentView === 'gameSummary'" x-transition> </div>
+
+
+                 <div x-show="gameMessage" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 transform translate-y-2" x-transition:enter-end="opacity-100 transform translate-y-0" x-transition:leave="transition ease-in duration-300" x-transition:leave-start="opacity-100 transform translate-y-0" x-transition:leave-end="opacity-0 transform translate-y-2"
+                     class="game-message-popup"
+                     :class="{ /* ... message styling classes ... */ }"
+                     x-text="gameMessage">
+                </div>
+            </main>
+        </div>
+
+        <div class="drawer-side z-40"> /* ... Sidebar menu as before ... */ </div>
+    </div>
+
+    <div class="bottom-nav-controls-container" x-show="currentView === 'home'"> /* ... Control buttons as before ... */ </div>
+
+    <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-functions-compat.js"></script>
+
+    <script>
+      // =================================================================================
+      // IMPORTANT: REPLACE WITH YOUR WEB APP'S FIREBASE CONFIGURATION
+      // =================================================================================
+       const firebaseConfig = {
+    apiKey: "AIzaSyDeQ3YkvRLvPFnpTPz-aDyh9Yr6JNLqWF0",
+    authDomain: "tambola-premium.firebaseapp.com",
+    projectId: "tambola-premium",
+    storageBucket: "tambola-premium.firebasestorage.app",
+    messagingSenderId: "431036089573",
+    appId: "1:431036089573:web:523500fb519d887535800c",
+    measurementId: "G-EQHHTY8QKE"
+
+      };
+      // =================================================================================
+
+      // Initialize Firebase
+      let firebaseApp;
+      if (!firebase.apps.length) {
+          firebaseApp = firebase.initializeApp(firebaseConfig);
+      } else {
+          firebaseApp = firebase.app();
+      }
+      const auth = firebase.auth();
+      const db = firebase.firestore();
+      const functions = firebase.functions();
+      // if (location.hostname === "localhost") { // Optional: for local testing with emulators
+      //    db.useEmulator("localhost", 8080);
+      //    functions.useEmulator("localhost", 5001); // Default functions emulator port
+      //    auth.useEmulator("http://localhost:9099"); // Default auth emulator port
+      // }
+    </script>
+
+    <script>
+    function adminRoom() {
+        return {
+            // Core Admin Info
+            adminName: '',
+            firebaseAdminUserId: null, // Authenticated Admin User ID
+            roomId: '',
+
+            // UI State
+            currentView: 'home',
+            isDrawerOpen: false,
+            themes: ["light", "dark", /* ... other themes ... */ "winter"],
+            notifications: [],
+
+            // Game State (synced from Firestore)
+            numbers: Array.from({ length: 90 }, (_, i) => ({ number: i + 1, called: false })),
+            calledNumbersHistory: [],
+            latestCalledNumber: null,
+            latestCalledPhrase: '', // For AI fancy phrases
+            callingMode: 'manual',
+            autoCallInterval: 5,
+            gameStatus: 'loading', // 'loading', 'idle', 'running', 'paused', 'stopped', 'error'
+
+            // Data Lists (synced from Firestore or through Cloud Functions)
+            players: [], // { id (UID), name, ticketCount }
+            pendingTicketRequests: [], // { id (docId), playerId, playerName, currentTickets, requestTimestamp }
+            pendingPrizeClaims: [], // { id (docId), claimId (original player claimId), playerId, playerName, prizeName, prizeRuleId, ticketId, ticketNumbers, serverValidationResult, claimTimestamp }
+            winners: [], // { id (docId), claimId, playerId, playerName, prizeName, prizeRuleId, coins, timestamp }
+            gameSummaryData: {},
+
+            // Rules and Financials (can be loaded from/saved to Firestore room document)
+            gameRules: [ /* Default structure - will be overwritten by Firestore or initialized */ ],
+            totalSelectedWeight: 0,
+            totalPotentialPrizeValue: 0,
+            totalMoneyCollected: 0,
+
+            // UI Messages
+            gameMessage: '',
+            gameMessageType: 'info',
+            gameMessageTimeout: null,
+
+            // Firestore listeners unsubscribe functions
+            roomListenerUnsubscribe: null,
+            ticketRequestsListenerUnsubscribe: null,
+            prizeClaimsListenerUnsubscribe: null,
+
+            init() {
+                const savedTheme = localStorage.getItem('theme') || 'light';
+                this.setTheme(savedTheme, null, false);
+
+                this.adminName = localStorage.getItem('adminName') || 'Admin';
+                this.roomId = localStorage.getItem('roomId') || null;
+                this.firebaseAdminUserId = localStorage.getItem('firebaseAdminUserId') || null;
+
+                if (!this.firebaseAdminUserId || !this.roomId) {
+                    this.showGameMessage("Admin session or Room ID missing. Redirecting to join page...", "error", null);
+                    setTimeout(() => { window.location.href = 'admin_join.html'; }, 2000);
+                    return;
+                }
+
+                this.showGameMessage("Loading room data...", "info", null);
+                this.initializeClientStateForNewGame(); // Initial setup of board etc.
+                this.setupFirestoreListeners();
+
+                // Initialize rules calculation (will be updated by Firestore listener)
+                this.gameRules.forEach(rule => {
+                    if (rule.originalWeight === undefined) rule.originalWeight = rule.baseWeight !== undefined ? rule.baseWeight : (rule.isActive ? 10 : 0);
+                    if (rule.baseWeight === undefined) rule.baseWeight = (rule.isActive ? 10 :0);
+                    rule.isActive = !!rule.isActive;
+                    rule.maxPrizes = parseInt(rule.maxPrizes) || 1;
+                    rule.coinsPerPrize = parseFloat(rule.coinsPerPrize) || 0;
+                });
+                this.normalizeActiveRuleWeights();
+                this.updateRuleCalculations();
+            },
+
+            initializeClientStateForNewGame() { /* ... as before ... */ },
+
+            setupFirestoreListeners() {
+                if (!this.roomId || !this.firebaseAdminUserId) return;
+
+                // 1. Listen to the main Room Document
+                const roomRef = db.collection('rooms').doc(this.roomId);
+                this.roomListenerUnsubscribe = roomRef.onSnapshot(doc => {
+                    if (doc.exists) {
+                        const roomData = doc.data();
+                        this.gameStatus = roomData.gameStatus || 'idle';
+                        this.callingMode = roomData.callingMode || 'manual';
+                        this.autoCallInterval = roomData.autoCallInterval || 5;
+                        this.calledNumbersHistory = roomData.currentNumbersCalled || [];
+                        this.latestCalledNumber = roomData.currentLatestCalledNumber || null;
+                        this.latestCalledPhrase = roomData.latestCalledPhrase || ''; // For AI phrases
+
+                        // Update number board
+                        this.numbers.forEach(n => n.called = false); // Reset board
+                        this.calledNumbersHistory.forEach(calledNum => {
+                            const numObj = this.numbers.find(n => n.number === calledNum);
+                            if (numObj) numObj.called = true;
+                        });
+
+                        // Update rules and financials
+                        if (roomData.rules) {
+                            this.gameRules = roomData.rules.map(r => ({ ...r, isActive: !!r.isActive, originalWeight: r.originalWeight !== undefined ? r.originalWeight : r.baseWeight }));
+                        }
+                        this.totalMoneyCollected = parseFloat(roomData.totalMoneyCollected) || 0;
+                        this.normalizeActiveRuleWeights();
+                        this.updateRuleCalculations();
+
+                        // Update players list from currentActivePlayers map
+                        this.players = roomData.currentActivePlayers ?
+                            Object.entries(roomData.currentActivePlayers).map(([uid, playerData]) => ({
+                                id: uid, name: playerData.playerName, ticketCount: playerData.ticketCount || 0
+                            })) : [];
+
+                        this.winners = roomData.currentWinners || []; // Assuming currentWinners is an array of winner objects
+
+                        if(this.gameMessage === "Loading room data..."){ this.showGameMessage("Room data loaded!", "success", 2000); }
+
+                    } else {
+                        this.showGameMessage(`Room ${this.roomId} not found or removed.`, "error", null);
+                        this.gameStatus = 'error';
+                        // Consider redirecting or allowing creation of new room
+                    }
+                }, error => {
+                    console.error("Error listening to room:", error);
+                    this.showGameMessage("Error syncing room data.", "error");
+                });
+
+                // 2. Listen for Pending Ticket Requests (Example: subcollection)
+                // Adjust path if using a global collection: db.collection('ticketRequests').where('roomId', '==', this.roomId).where('status', '==', 'pending')
+                this.ticketRequestsListenerUnsubscribe = db.collection('rooms').doc(this.roomId).collection('ticketRequests')
+                    .where('status', '==', 'pending')
+                    .orderBy('requestTimestamp', 'desc')
+                    .onSnapshot(snapshot => {
+                        const requests = [];
+                        snapshot.forEach(doc => requests.push({ id: doc.id, ...doc.data() }));
+                        this.pendingTicketRequests = requests;
+                        // Add notifications for new requests if desired
+                        // This requires tracking already seen requests or comparing old vs new list
+                    }, error => console.error("Error listening to ticket requests:", error));
+
+                // 3. Listen for Pending Prize Claims (Example: from prizeClaimsAudit)
+                this.prizeClaimsListenerUnsubscribe = db.collection('prizeClaimsAudit')
+                    .where('roomId', '==', this.roomId)
+                    .where('status', '==', 'pending_admin_approval') // Or 'pending_validation' if Genkit step is first
+                    .orderBy('claimTimestamp', 'desc')
+                    .onSnapshot(snapshot => {
+                        const claims = [];
+                        snapshot.forEach(doc => claims.push({ id: doc.id, ...doc.data() }));
+                        this.pendingPrizeClaims = claims;
+                        // Add notifications for new claims if desired
+                    }, error => console.error("Error listening to prize claims:", error));
+
+            },
+
+            // Notification System Methods (addNotification, handleNotificationClick, clearAllNotifications)
+            // ... (Keep these methods as previously defined) ...
+            addNotification(type, message, targetView, relatedId = null) { /* ... */ },
+            handleNotificationClick(notification) { /* ... */ },
+            clearAllNotifications() { /* ... */ },
+
+
+            // Game Control Actions (will now call Cloud Functions or update Firestore)
+            async startGame() {
+                if (this.gameStatus !== 'idle' && this.gameStatus !== 'stopped') { /* ... */ return; }
+                // ... validation for rules and money ...
+                this.showGameMessage("Starting game...", "info");
+                try {
+                    const startGameFunction = functions.httpsCallable('startGame');
+                    await startGameFunction({
+                        roomId: this.roomId,
+                        rulesConfig: this.gameRules.filter(r => r.isActive), // Send only active rules
+                        totalMoneyCollected: this.totalMoneyCollected,
+                        callingMode: this.callingMode,
+                        autoCallInterval: this.autoCallInterval
+                    });
+                    // UI will update via Firestore listener
+                    this.showGameMessage("Game start initiated!", "success");
+                } catch (error) {
+                    console.error("Error starting game:", error);
+                    this.showGameMessage("Failed to start game: " + error.message, "error");
+                }
+            },
+
+            async callNextNumber() {
+                if (this.gameStatus !== 'running' || this.callingMode !== 'manual') { /* ... */ return; }
+                if (this.calledNumbersHistory.length >= 90) { /* ... */ return; }
+                try {
+                    const callNumberFunction = functions.httpsCallable('callNextNumber'); // This CF can also call Genkit
+                    await callNumberFunction({ roomId: this.roomId });
+                    // UI (latestCalledNumber, calledNumbersHistory, latestCalledPhrase) updates via Firestore listener
+                } catch (error) {
+                    console.error("Error calling next number:", error);
+                    this.showGameMessage("Failed to call number: " + error.message, "error");
+                }
+            },
+
+            async updateGameStatusInFirestore(newStatus) {
+                if (!this.roomId) return;
+                this.showGameMessage(`Setting game status to ${newStatus}...`, "info");
+                try {
+                    await db.collection('rooms').doc(this.roomId).update({ gameStatus: newStatus });
+                    // UI updates via Firestore listener
+                    this.showGameMessage(`Game status set to ${newStatus}.`, "success");
+                } catch (error) {
+                    console.error(`Error setting game status to ${newStatus}:`, error);
+                    this.showGameMessage(`Failed to set status: ${error.message}`, "error");
+                }
+            },
+            pauseGame() { if (this.callingMode === 'auto' && this.gameStatus === 'running') this.updateGameStatusInFirestore('paused'); },
+            resumeGame() { if (this.callingMode === 'auto' && this.gameStatus === 'paused') this.updateGameStatusInFirestore('running'); },
+            stopGame() { if (this.gameStatus === 'running' || this.gameStatus === 'paused') this.updateGameStatusInFirestore('stopped'); },
+
+            // Approval Actions (will call Cloud Functions)
+            async approveTicketRequest(requestId) {
+                const request = this.pendingTicketRequests.find(r => r.id === requestId);
+                if(!request) return;
+                this.showGameMessage(`Approving ticket for ${request.playerName}...`, "info");
+                try {
+                    const processTicketRequest = functions.httpsCallable('processTicketRequest');
+                    await processTicketRequest({ requestId: requestId, roomId: this.roomId, action: 'approve' });
+                    // Optimistic UI update handled by Firestore listener removing it from pending
+                    this.showGameMessage("Ticket approval processed.", "success");
+                } catch (error) {
+                    console.error("Error approving ticket:", error);
+                    this.showGameMessage("Failed to approve ticket: " + error.message, "error");
+                }
+            },
+            async rejectTicketRequest(requestId, reason = "Admin rejected") {
+                const request = this.pendingTicketRequests.find(r => r.id === requestId);
+                 if(!request) return;
+                this.showGameMessage(`Rejecting ticket for ${request.playerName}...`, "info");
+                try {
+                    const processTicketRequest = functions.httpsCallable('processTicketRequest');
+                    await processTicketRequest({ requestId: requestId, roomId: this.roomId, action: 'reject', reason: reason });
+                    this.showGameMessage("Ticket rejection processed.", "success");
+                } catch (error) {
+                    console.error("Error rejecting ticket:", error);
+                    this.showGameMessage("Failed to reject ticket: " + error.message, "error");
+                }
+            },
+            async approvePrizeClaim(claim) { // claim is the full claim object
+                this.showGameMessage(`Approving prize '${claim.prizeName}' for ${claim.playerName}...`, "info");
+                try {
+                    const processPrizeClaim = functions.httpsCallable('processPrizeClaim');
+                    await processPrizeClaim({ claimId: claim.id, roomId: this.roomId, action: 'approve' });
+                    // UI update handled by Firestore listener on prizeClaimsAudit or currentWinners
+                    this.showGameMessage("Prize approval processed.", "success");
+                } catch (error) {
+                    console.error("Error approving prize:", error);
+                    this.showGameMessage("Failed to approve prize: " + error.message, "error");
+                }
+            },
+            async rejectPrizeClaim(claim, reason = "Did not meet criteria") {
+                this.showGameMessage(`Rejecting prize '${claim.prizeName}' for ${claim.playerName}...`, "info");
+                 try {
+                    const processPrizeClaim = functions.httpsCallable('processPrizeClaim');
+                    await processPrizeClaim({ claimId: claim.id, roomId: this.roomId, action: 'reject', reason: reason });
+                    this.showGameMessage("Prize rejection processed.", "success");
+                } catch (error) {
+                    console.error("Error rejecting prize:", error);
+                    this.showGameMessage("Failed to reject prize: " + error.message, "error");
+                }
+            },
+
+            // Rules & Financials (local calculation, then save to Firestore)
+            handleActivationToggle(ruleId) { /* ... logic as before, then calls normalize & update ... */ },
+            handleBaseWeightInput(ruleId, inputValue) { /* ... logic as before, then calls normalize & update ... */ },
+            normalizeActiveRuleWeights(editedRuleId = null, newWeightForEditedRule = null) { /* ... logic as before ... */ },
+            updateRuleCalculations() { /* ... logic as before, ensuring totalPotentialPrizeValue name ... */ },
+
+            async saveRulesConfiguration() {
+                if (this.gameStatus === 'running' || this.gameStatus === 'paused') { /* ... */ return; }
+                this.normalizeActiveRuleWeights(); // Ensure weights are normalized
+                this.updateRuleCalculations();   // Ensure calculations are up-to-date
+
+                this.showGameMessage("Saving rules and financials to server...", "info");
+                try {
+                    await db.collection('rooms').doc(this.roomId).update({
+                        rules: this.gameRules, // Save the whole array
+                        totalMoneyCollected: parseFloat(this.totalMoneyCollected) || 0
+                    });
+                    this.showGameMessage("Rules and financials saved successfully!", "success");
+                } catch (error) {
+                    console.error("Error saving rules configuration:", error);
+                    this.showGameMessage("Failed to save rules: " + error.message, "error");
+                }
+            },
+
+            // UI Utility Functions
+            setTheme(themeName, event = null, closeDropdown = true) { /* ... as before ... */ },
+            changeView(viewName) { /* ... as before ... */ },
+            showGameMessage(text, type = 'info', duration = 3000) { /* ... as before ... */ },
+            generateQRCode() { /* ... as before ... */ },
+            logoutAdmin() {
+                this.showGameMessage("Logging out admin...", "info", 1500);
+                // Unsubscribe from Firestore listeners
+                if (this.roomListenerUnsubscribe) this.roomListenerUnsubscribe();
+                if (this.ticketRequestsListenerUnsubscribe) this.ticketRequestsListenerUnsubscribe();
+                if (this.prizeClaimsListenerUnsubscribe) this.prizeClaimsListenerUnsubscribe();
+
+                auth.signOut().then(() => {
+                    localStorage.removeItem('adminName');
+                    localStorage.removeItem('roomId');
+                    localStorage.removeItem('firebaseAdminUserId');
+                    localStorage.removeItem('firebaseAdminUserEmail');
+                    window.location.href = 'admin_join.html';
+                }).catch(error => {
+                    console.error("Admin logout error:", error);
+                    this.showGameMessage("Logout failed.", "error");
+                });
+            }
+        }
+    }
+    </script>
+</body>
+</html>
