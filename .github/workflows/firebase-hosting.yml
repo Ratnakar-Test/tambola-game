@@ -21,8 +21,11 @@ jobs:
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
 
-      - name: Write Firebase Service Account Credentials to file
-        run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > ${HOME}/firebase-key.json
+      - name: Write Service Account Key to file
+        run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > $HOME/firebase-key.json
+
+      - name: Set GOOGLE_APPLICATION_CREDENTIALS env variable
+        run: echo "GOOGLE_APPLICATION_CREDENTIALS=$HOME/firebase-key.json" >> $GITHUB_ENV
 
       - name: Deploy to Firebase Hosting
-        run: firebase deploy --only hosting --project tambola-premium --token "$(cat ${HOME}/firebase-key.json)"
+        run: firebase deploy --only hosting --project tambola-premium
