@@ -5,73 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tambola Admin - Game Room</title>
     <link href="https://cdn.jsdelivr.net/npm/daisyui@latest/dist/full.css" rel="stylesheet" type="text/css" />
-    <script src="https://cdn.tailwindcss.com"></script> <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
-
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-functions-compat.js"></script>
-
-    <script>
-        console.log("Global script for Firebase init starting immediately after SDKs...");
-        
-        const firebaseConfig = {
-            apiKey: "AIzaSyDeQ3YkvRLvPFnpTPz-aDyh9Yr6JNLqWF0", // Your actual config
-            authDomain: "tambola-premium.firebaseapp.com",
-            projectId: "tambola-premium",
-            storageBucket: "tambola-premium.firebasestorage.app",
-            messagingSenderId: "431036089573",
-            appId: "1:431036089573:web:523500fb519d887535800c",
-            measurementId: "G-EQHHTY8QKE"
-        };
-
-        // Declare global Firebase service variables on window
-        window.firebaseAppInstance = null;
-        window.fbAuth = null;
-        window.fbDb = null;
-        window.fbFunctions = null;
-        window.firebaseServicesInitialized = false; // Flag
-
-        try {
-            if (typeof firebase !== 'undefined' && !firebase.apps.length) {
-                window.firebaseAppInstance = firebase.initializeApp(firebaseConfig);
-                console.log("Firebase App Initialized on window:", window.firebaseAppInstance);
-
-                window.fbAuth = firebase.auth();
-                console.log("Firebase Auth Initialized (window.fbAuth):", typeof window.fbAuth);
-
-                window.fbDb = firebase.firestore();
-                console.log("Firestore Initialized (window.fbDb):", typeof window.fbDb);
-
-                if (typeof firebase.functions === 'function') {
-                    window.fbFunctions = firebase.functions();
-                    console.log("Firebase Functions Initialized (window.fbFunctions):", typeof window.fbFunctions);
-                } else {
-                    console.error("CRITICAL ERROR: firebase.functions is NOT a function.");
-                }
-                window.firebaseServicesInitialized = true;
-                console.log("Firebase services initialization flag set to true.");
-
-            } else if (typeof firebase !== 'undefined' && firebase.apps.length > 0) {
-                window.firebaseAppInstance = firebase.app();
-                window.fbAuth = firebase.auth();
-                window.fbDb = firebase.firestore();
-                window.fbFunctions = firebase.functions();
-                window.firebaseServicesInitialized = true;
-                console.log("Firebase App already initialized. Services attached to window.");
-            } else {
-                 console.error("CRITICAL: Firebase global object not found. SDKs did not load.");
-                 alert("CRITICAL Error: Firebase SDKs not loaded. Please check your internet connection and refresh.");
-            }
-        } catch (e) {
-            console.error("Error during Firebase SDK initialization:", e);
-            window.firebaseServicesInitialized = false;
-        }
-        console.log("Global script for Firebase init finished.");
-    </script>
-
-    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
 
     <style>
         body {
@@ -531,34 +467,84 @@
         </div>
     </div>
 
+    <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-functions-compat.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
     <script>
+      // Declare global Firebase service variables for the page
+      let fbAuth, fbDb, fbFunctions;
+
+      // Firebase Config - REPLACE WITH YOUR ACTUAL CONFIG IF DIFFERENT
+      const firebaseConfig = {
+        apiKey: "AIzaSyDeQ3YkvRLvPFnpTPz-aDyh9Yr6JNLqWF0",
+        authDomain: "tambola-premium.firebaseapp.com",
+        projectId: "tambola-premium",
+        storageBucket: "tambola-premium.firebasestorage.app",
+        messagingSenderId: "431036089573",
+        appId: "1:431036089573:web:523500fb519d887535800c",
+        measurementId: "G-EQHHTY8QKE"
+      };
+
+      // Initialize Firebase App once the core SDK is ready
+      // The 'firebase' global is available because firebase-app-compat.js is loaded (deferred)
+      console.log("Attempting Firebase App Initialization (global scope)...");
+      try {
+          if (!firebase.apps.length) {
+              firebase.initializeApp(firebaseConfig);
+              console.log("Firebase App Initialized.");
+          } else {
+              firebase.app(); 
+              console.log("Firebase App already initialized.");
+          }
+
+          // Initialize other Firebase services and assign to global vars
+          fbAuth = firebase.auth();
+          console.log("Firebase Auth Initialized (fbAuth):", typeof fbAuth);
+
+          fbDb = firebase.firestore();
+          console.log("Firestore Initialized (fbDb):", typeof fbDb);
+
+          if (typeof firebase.functions === 'function') {
+              fbFunctions = firebase.functions();
+              console.log("Firebase Functions Initialized (fbFunctions):", typeof fbFunctions);
+              // Optional: Emulator setup
+              // if (location.hostname === "localhost") { /* ... */ }
+          } else {
+              console.error("CRITICAL ERROR: firebase.functions is NOT a function. SDK issue?");
+              alert("CRITICAL: Functions SDK not loaded!");
+          }
+      } catch(e) {
+          console.error("Error initializing Firebase services globally:", e);
+          alert("Error initializing Firebase services. App functionality will be limited.");
+      }
+
+
       function adminRoom() {
-        console.log("adminRoom component constructor called. Checking window.fbDb:", (typeof window.fbDb), "window.fbFunctions:", (typeof window.fbFunctions));
+        console.log("adminRoom component constructor. Checking fbDb:", (typeof fbDb), "fbFunctions:", (typeof fbFunctions));
         return {
             // Core Admin Info
             adminName: '',
             firebaseAdminUserId: null,
             roomId: '',
+            _firebaseReady: false, // Internal flag
 
             // UI State
             currentView: 'home',
             isDrawerOpen: false,
-            themes: [ 
-                "light", "dark", "cupcake", "bumblebee", "emerald", "corporate", "synthwave", "retro", "cyberpunk", 
-                "valentine", "halloween", "garden", "forest", "aqua", "lofi", "pastel", "fantasy", "wireframe", 
-                "black", "luxury", "dracula", "cmyk", "autumn", "business", "acid", "lemonade", "night", "coffee", "winter"
-            ],
+            themes: [ "light", "dark", "cupcake", "bumblebee", "emerald", "corporate", "synthwave", "retro", "cyberpunk", "valentine", "halloween", "garden", "forest", "aqua", "lofi", "pastel", "fantasy", "wireframe", "black", "luxury", "dracula", "cmyk", "autumn", "business", "acid", "lemonade", "night", "coffee", "winter" ],
             notifications: [],
 
             // Game State
-            numbers: [], 
+            numbers: Array.from({ length: 90 }, (_, i) => ({ number: i + 1, called: false })), 
             calledNumbersHistory: [],
             latestCalledNumber: null,
             latestCalledPhrase: '', 
             callingMode: 'manual', 
             autoCallInterval: 5, 
             gameStatus: 'loading',
-            _firebaseReady: false, 
 
             // Data Lists
             players: [], 
@@ -591,7 +577,7 @@
             prizeClaimsListenerUnsubscribe: null,
 
             alpineComponentInit() { 
-                console.log("adminRoom alpineComponentInit() called. Checking window.fbDb:", (typeof window.fbDb), "window.fbFunctions:", (typeof window.fbFunctions));
+                console.log("adminRoom alpineComponentInit() called. Checking fbDb:", (typeof fbDb));
                 const savedTheme = localStorage.getItem('theme') || 'light'; 
                 this.setTheme(savedTheme, null, false); 
 
@@ -604,9 +590,9 @@
                     setTimeout(() => { window.location.href = 'admin_join.html'; }, 2500); 
                     return; 
                 }
-                this.showGameMessage("Waiting for Firebase services...", "info", null); 
-                this.initializeClientStateForNewGame(false); 
                 
+                this.showGameMessage("Initializing component...", "info", null); 
+                this.initializeClientStateForNewGame(false); 
                 this.gameRules.forEach(rule => { 
                     if (rule.originalWeight === undefined) rule.originalWeight = rule.baseWeight !== undefined ? rule.baseWeight : (rule.isActive ? 10 : 0); 
                     if (rule.baseWeight === undefined) rule.baseWeight = (rule.isActive ? 10 :0); 
@@ -618,45 +604,35 @@
                 this.normalizeActiveRuleWeights(); 
                 this.updateRuleCalculations(); 
 
-                this.waitForFirebaseReady().then(() => {
-                    console.log("Firebase confirmed ready in alpineComponentInit(), setting up listeners.");
+                // Directly check if Firebase services are ready
+                if (typeof fbDb === 'object' && fbDb.collection &&
+                    typeof fbFunctions === 'object' && fbFunctions.httpsCallable &&
+                    typeof fbAuth === 'object' && fbAuth.signOut) {
+                    console.log("Firebase services confirmed ready in alpineComponentInit(). Setting up listeners.");
                     this._firebaseReady = true;
                     this.showGameMessage("Loading room data...", "info");
                     if (this.roomId) {
                         this.setupFirestoreListeners();
                     }
-                }).catch(err => {
-                    console.error("Firebase services not ready after timeout in alpineComponentInit:", err);
-                    this.showGameMessage("Error: Firebase services not available. Please refresh. " + err.message, "error", null);
-                    this.gameStatus = 'error';
-                });
-            },
-
-            waitForFirebaseReady(timeout = 7000, interval = 200) {
-                return new Promise((resolve, reject) => {
-                    console.log("waitForFirebaseReady called. Checking for window.fbDb and window.fbFunctions.");
-                    let elapsedTime = 0;
-                    const checkInterval = setInterval(() => {
-                        const isReady = typeof window.fbDb === 'object' && window.fbDb.collection &&
-                                      typeof window.fbFunctions === 'object' && window.fbFunctions.httpsCallable &&
-                                      typeof window.fbAuth === 'object' && window.fbAuth.signOut;
-                        console.log(`waitForFirebaseReady check #${(elapsedTime/interval)+1}: fbDb: ${typeof window.fbDb}, fbFunctions: ${typeof window.fbFunctions}, fbAuth: ${typeof window.fbAuth}. Ready: ${isReady}`);
-                        if (isReady) {
-                            console.log("waitForFirebaseReady: Firebase services (Db, Functions, Auth) are ready!");
-                            clearInterval(checkInterval);
-                            resolve();
+                } else {
+                    console.error("CRITICAL in alpineComponentInit: Firebase services not ready. Retrying in 1s.", {db: typeof fbDb, func: typeof fbFunctions, auth: typeof fbAuth});
+                    this.showGameMessage("Core services initializing... Retrying.", "warning", null);
+                    this.gameStatus = 'loading'; // Keep it loading
+                    setTimeout(() => { // Retry once after a delay
+                        if (typeof fbDb === 'object' && fbDb.collection && typeof fbFunctions === 'object' && fbFunctions.httpsCallable && typeof fbAuth === 'object' && fbAuth.signOut) {
+                            console.log("Firebase services ready on retry in alpineComponentInit().");
+                            this._firebaseReady = true;
+                            this.showGameMessage("Loading room data...", "info");
+                            if (this.roomId) this.setupFirestoreListeners();
                         } else {
-                            elapsedTime += interval;
-                            if (elapsedTime >= timeout) {
-                                console.error("waitForFirebaseReady: Timeout reached. Services still not ready.");
-                                clearInterval(checkInterval);
-                                reject(new Error("Timeout waiting for Firebase services on window."));
-                            }
+                             console.error("CRITICAL on retry: Firebase services still not ready.");
+                             this.showGameMessage("Error: Core services failed to initialize. Please refresh.", "error", null);
+                             this.gameStatus = 'error';
                         }
-                    }, interval);
-                });
+                    }, 1000);
+                }
             },
-
+            
             initializeClientStateForNewGame(showMsg = true) {
                 this.numbers = Array.from({ length: 90 }, (_, i) => ({ number: i + 1, called: false }));
                 this.calledNumbersHistory = [];
@@ -672,62 +648,36 @@
             },
 
             async _ensureFirebaseFunctionsReady() {
-                if (!this._firebaseReady || typeof window.fbFunctions !== 'object' || typeof window.fbFunctions.httpsCallable !== 'function') {
-                    console.log("_ensureFirebaseFunctionsReady: Firebase not ready or Functions service invalid. Attempting to wait.");
-                    try {
-                        await this.waitForFirebaseReady();
-                        this._firebaseReady = true; 
-                         console.log("_ensureFirebaseFunctionsReady: Firebase became ready after wait.");
-                    } catch (err) {
-                        console.error("_ensureFirebaseFunctionsReady: Failed to become ready after wait.", err);
-                        this.showGameMessage("Functions service not ready. Please refresh.", "error", null);
-                        return null;
-                    }
+                if (!this._firebaseReady || typeof fbFunctions !== 'object' || typeof fbFunctions.httpsCallable !== 'function') {
+                    console.error("Firebase Functions (fbFunctions) not ready for call.", {ready: this._firebaseReady, type: typeof fbFunctions});
+                    this.showGameMessage("Client Error: Functions service not ready. Please refresh.", "error", null);
+                    return null; 
                 }
-                // Re-check after waiting
-                if (typeof window.fbFunctions !== 'object' || typeof window.fbFunctions.httpsCallable !== 'function') {
-                     console.error("Firebase Functions service (window.fbFunctions) is still not valid after wait.");
-                     this.showGameMessage("Client Error: Firebase Functions service is not properly initialized. Please refresh.", "error", null);
-                     return null;
-                }
-                return window.fbFunctions;
+                return fbFunctions;
             },
             async _ensureFirestoreReady() {
-                if (!this._firebaseReady || typeof window.fbDb !== 'object' || typeof window.fbDb.collection !== 'function') {
-                    console.log("_ensureFirestoreReady: Firebase not ready or Firestore service invalid. Attempting to wait.");
-                     try {
-                        await this.waitForFirebaseReady();
-                        this._firebaseReady = true; 
-                        console.log("_ensureFirestoreReady: Firebase became ready after wait.");
-                    } catch (err) {
-                        console.error("_ensureFirestoreReady: Failed to become ready after wait.", err);
-                        this.showGameMessage("Database service not ready. Please refresh.", "error", null);
-                        return null;
-                    }
+                if (!this._firebaseReady || typeof fbDb !== 'object' || typeof fbDb.collection !== 'function') {
+                     console.error("Firestore (fbDb) not ready for call.", {ready: this._firebaseReady, type: typeof fbDb});
+                    this.showGameMessage("Client Error: Firestore service not ready. Please refresh.", "error", null);
+                    return null; 
                 }
-                 // Re-check after waiting
-                if (typeof window.fbDb !== 'object' || typeof window.fbDb.collection !== 'function') {
-                    console.error("Firestore service (window.fbDb) is still not valid after wait.");
-                    this.showGameMessage("Client Error: Firestore service is not properly initialized. Please refresh.", "error", null);
-                    return null;
+                return fbDb;
+            },
+            async _ensureAuthReady() {
+                if (!this._firebaseReady || typeof fbAuth !== 'object' || typeof fbAuth.signOut !== 'function') {
+                     console.error("Auth (fbAuth) not ready for call.", {ready: this._firebaseReady, type: typeof fbAuth});
+                    this.showGameMessage("Client Error: Auth service not ready. Please refresh.", "error", null);
+                    return null; 
                 }
-                return window.fbDb;
+                return fbAuth;
             },
 
             async setupFirestoreListeners() {
                 const dbInstance = await this._ensureFirestoreReady();
-                if (!dbInstance) {
-                    this.showGameMessage("Critical Error: Firestore service unavailable for listeners. Please refresh.", "error", null);
-                    this.gameStatus = 'error';
-                    return;
-                }
+                if (!dbInstance) { this.gameStatus = 'error'; return; }
                 console.log("setupFirestoreListeners executing. Using dbInstance:", typeof dbInstance);
 
-                if (!this.roomId || !this.firebaseAdminUserId) {
-                     console.error("Cannot setup listeners: Room ID or Admin UID missing.");
-                     this.showGameMessage("Error: Room or Admin info missing for data listeners.", "error", null);
-                     this.gameStatus = 'error'; return;
-                }
+                if (!this.roomId || !this.firebaseAdminUserId) { /* ... error handling ... */ this.gameStatus = 'error'; return; }
 
                 const roomRef = dbInstance.collection('rooms').doc(this.roomId); 
                 if (this.roomListenerUnsubscribe) { console.log("Unsubscribing existing room listener."); this.roomListenerUnsubscribe(); }
@@ -736,7 +686,7 @@
                      console.log("Room listener fired. Doc exists:", doc.exists);
                      if (doc.exists) { 
                         const roomData = doc.data(); 
-                        console.log("Room data received:", JSON.stringify(roomData).substring(0, 300) + "..."); // Log snippet
+                        // console.log("Room data received:", JSON.stringify(roomData).substring(0, 300) + "...");
                         this.gameStatus = roomData.gameStatus || 'idle'; 
                         this.callingMode = roomData.callingMode || 'manual'; 
                         this.autoCallInterval = roomData.autoCallInterval || 5;
@@ -764,7 +714,7 @@
                         this.players = roomData.currentActivePlayers ? Object.entries(roomData.currentActivePlayers).map(([uid, playerData]) => ({ id: uid, name: playerData.playerName, ticketCount: playerData.ticketCount || 0 })) : []; 
                         this.winners = roomData.currentWinners || []; 
                         this.gameSummaryData = roomData.gameSummary || {}; 
-                        if(this.gameMessage === "Loading room data..." || this.gameMessage === "Waiting for Firebase services..."){ this.showGameMessage("Room data loaded successfully!", "success", 2000); }
+                        if(this.gameMessage === "Loading room data..." || this.gameMessage === "Initializing component..."){ this.showGameMessage("Room data loaded successfully!", "success", 2000); }
                     } else { 
                         this.showGameMessage(`Room ${this.roomId} not found. Please verify Room ID.`, "error", null); 
                         this.gameStatus = 'error'; 
@@ -787,7 +737,7 @@
                     if (requests.length > oldRequestCount && oldRequestCount !== undefined && this.gameStatus !== 'loading') { 
                          this.addNotification('Ticket Request', `New ticket request(s) received.`, 'ticketRequests');
                     }
-                 }, error => { console.error("Error listening to ticket requests:", error); /* ... */ });
+                 }, error => { console.error("Error listening to ticket requests:", error); this.showGameMessage("Error syncing ticket requests.", "error");});
 
                  const prizeClaimsRef = dbInstance.collection('prizeClaimsAudit')
                     .where('roomId', '==', this.roomId)
@@ -802,7 +752,7 @@
                     if (claims.length > oldClaimCount && oldClaimCount !== undefined && this.gameStatus !== 'loading') { 
                         this.addNotification('Prize Claim', `New prize claim(s) for approval.`, 'prizeClaims');
                     }
-                }, error => { console.error("Error listening to prize claims:", error); /* ... */ });
+                }, error => { console.error("Error listening to prize claims:", error); this.showGameMessage("Error syncing prize claims.", "error");});
             },
 
             addNotification(type, message, targetView = null, relatedId = null) { /* ... */ },
@@ -810,10 +760,9 @@
             clearAllNotifications() { /* ... */ },
 
             async startGame() {
-                this.showGameMessage("Attempting to start game...", "info");
                 const functionsInstance = await this._ensureFirebaseFunctionsReady();
                 if (!functionsInstance) return;
-
+                this.showGameMessage("Attempting to start game...", "info");
                 if (this.gameStatus === 'running' || this.gameStatus === 'paused') { this.showGameMessage("Game already in progress.", "warning"); return; }
                 const activeRules = this.gameRules.filter(rule => rule.isActive);
                 if (activeRules.length === 0) { this.showGameMessage("Please activate at least one prize rule.", "error"); this.currentView = 'rules'; return; }
@@ -834,7 +783,6 @@
                         callingMode: this.callingMode, 
                         autoCallInterval: parseInt(this.autoCallInterval) || 5 
                     });
-                    // this.showGameMessage("Game start initiated! Status will update via Firestore.", "success"); // Message will come from listener ideally
                 } catch (error) { 
                     console.error("Error calling 'startGame' Cloud Function:", error); 
                     this.showGameMessage(`Failed to start game: ${error.message || 'Cloud Function call error'}`, "error"); 
@@ -844,8 +792,8 @@
             async callNextNumber() {
                 const functionsInstance = await this._ensureFirebaseFunctionsReady();
                 if (!functionsInstance) return;
-                if (this.gameStatus !== 'running' || this.callingMode !== 'manual') { /* ... */ return; }
-                if (this.calledNumbersHistory.length >= 90) { /* ... */ return; }
+                if (this.gameStatus !== 'running' || this.callingMode !== 'manual') { this.showGameMessage("Not in manual running mode.", "warning"); return; }
+                if (this.calledNumbersHistory.length >= 90) { this.showGameMessage("All numbers called.", "info"); return; }
                 try {
                     const callNumberFunctionCallable = functionsInstance.httpsCallable('callNextNumber'); 
                     await callNumberFunctionCallable({ roomId: this.roomId }); 
@@ -856,7 +804,6 @@
                 const dbInstance = await this._ensureFirestoreReady();
                 if (!dbInstance) return;
                 if (!this.roomId) { this.showGameMessage("Room ID is missing.", "error"); return; }
-                // this.showGameMessage(`Setting game status to ${newStatus}...`, "info"); // Often too quick for user
                 try {
                     await dbInstance.collection('rooms').doc(this.roomId).update({ gameStatus: newStatus }); 
                 } catch (error) { console.error(`Error setting game status to ${newStatus}:`, error); this.showGameMessage(`Failed to set status: ${error.message}`, "error");}
@@ -869,12 +816,10 @@
                 const functionsInstance = await this._ensureFirebaseFunctionsReady();
                 if (!functionsInstance) return;
                 const request = this.pendingTicketRequests.find(r => r.id === requestId);
-                if(!request) { /* ... */ return; }
-                // this.showGameMessage(`${action === 'approve' ? 'Approving' : 'Rejecting'} ticket...`, "info"); // UI updates via listener
+                if(!request) { this.showGameMessage("Request not found.", "error"); return; }
                 try {
                     const processTicketRequestCallable = functionsInstance.httpsCallable('processTicketRequest');
                     await processTicketRequestCallable({ requestId, roomId: this.roomId, action, reason });
-                    // this.showGameMessage(`Ticket ${action} processed.`, "success");
                 } catch (error) { console.error(`Error ${action} ticket:`, error); this.showGameMessage(`Failed to ${action} ticket: ${error.message}`, "error");}
             },
             approveTicketRequest(requestId) { this.processTicketRequestAction(requestId, 'approve'); },
@@ -883,12 +828,10 @@
             async processPrizeClaimAction(claim, action, reason = null) {
                 const functionsInstance = await this._ensureFirebaseFunctionsReady();
                 if (!functionsInstance) return;
-                if (!claim || !claim.id) { /* ... */ return; }
-                // this.showGameMessage(`${action === 'approve' ? 'Approving' : 'Rejecting'} prize...`, "info"); // UI updates via listener
+                if (!claim || !claim.id) { this.showGameMessage("Invalid claim data.", "error"); return; }
                 try {
                     const processPrizeClaimCallable = functionsInstance.httpsCallable('processPrizeClaim');
                     await processPrizeClaimCallable({ claimId: claim.id, roomId: this.roomId, action, reason });
-                    // this.showGameMessage(`Prize ${action} processed.`, "success");
                 } catch (error) { console.error(`Error ${action} prize:`, error); this.showGameMessage(`Failed to ${action} prize: ${error.message}`, "error");}
             },
             approvePrizeClaim(claim) { this.processPrizeClaimAction(claim, 'approve'); },
@@ -902,12 +845,20 @@
             async saveRulesConfiguration() {
                 const dbInstance = await this._ensureFirestoreReady();
                 if (!dbInstance) return;
-                if (this.gameStatus === 'running' || this.gameStatus === 'paused') { this.showGameMessage("Cannot save while game is active.", "warning"); return; }
+                if (this.gameStatus === 'running' || this.gameStatus === 'paused') { /* ... */ return; }
                 this.normalizeActiveRuleWeights(); 
                 this.updateRuleCalculations();   
                 this.showGameMessage("Saving rules...", "info");
                 try {
-                    const rulesToSave = this.gameRules.map(r => ({ /* ... map your rule data as before ... */ }));
+                    const rulesToSave = this.gameRules.map(r => ({ 
+                        id: r.id, name: r.name, description: r.description, 
+                        isActive: r.isActive, 
+                        baseWeight: parseFloat(r.baseWeight.toFixed(4)) || 0, 
+                        originalWeight: parseFloat(r.originalWeight.toFixed(4)) || 0,
+                        coinsPerPrize: parseFloat(r.coinsPerPrize.toFixed(2)) || 0, 
+                        maxPrizes: parseInt(r.maxPrizes) || 1,
+                        claims: parseInt(r.claims) || 0
+                     }));
                     await dbInstance.collection('rooms').doc(this.roomId).update({ 
                         rules: rulesToSave, 
                         totalMoneyCollected: parseFloat(this.totalMoneyCollected) || 0 
@@ -921,19 +872,22 @@
             showGameMessage(text, type = 'info', duration = 3500) { /* ... Your existing logic ... */ },
             generateQRCode() { /* ... Your existing logic ... */ },
             
-            logoutAdmin() {
+            async logoutAdmin() {
+                const authInstance = await this._ensureAuthReady();
+                if (!authInstance) return;
+
                 this.showGameMessage("Logging out admin...", "info", 1500);
                 if (this.roomListenerUnsubscribe) this.roomListenerUnsubscribe();
                 if (this.ticketRequestsListenerUnsubscribe) this.ticketRequestsListenerUnsubscribe();
                 if (this.prizeClaimsListenerUnsubscribe) this.prizeClaimsListenerUnsubscribe();
-
-                const authInstance = window.fbAuth; 
-                if (authInstance && typeof authInstance.signOut === 'function') {
-                    authInstance.signOut().then(() => {
-                        localStorage.removeItem('adminName'); /* ... clear all relevant localStorage ... */
-                        window.location.href = 'admin_join.html';
-                    }).catch(error => { /* ... */ });
-                } else { /* ... error handling ... */ }
+                
+                authInstance.signOut().then(() => {
+                    localStorage.removeItem('adminName'); 
+                    localStorage.removeItem('roomId');
+                    localStorage.removeItem('firebaseAdminUserId'); 
+                    localStorage.removeItem('firebaseAdminUserEmail');
+                    window.location.href = 'admin_join.html';
+                }).catch(error => { console.error("Admin logout error:", error); this.showGameMessage(`Logout failed: ${error.message}`, "error"); });
             }
         };
       }
