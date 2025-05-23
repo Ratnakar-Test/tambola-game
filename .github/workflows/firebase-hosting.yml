@@ -1,4 +1,4 @@
-name: Deploy to Firebase Hosting
+name: Deploy to Firebase Hosting and Functions
 
 on:
   push:
@@ -8,6 +8,8 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }} # Create this secret in your GitHub repo settings
 
     steps:
       - name: Checkout Repo
@@ -16,16 +18,13 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 18
+          node-version: 18 # Ensure this matches your functions/package.json engine
 
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
 
-      - name: Write Service Account Key to file
-        run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > $HOME/firebase-key.json
-
-      - name: Set GOOGLE_APPLICATION_CREDENTIALS env variable
-        run: echo "GOOGLE_APPLICATION_CREDENTIALS=$HOME/firebase-key.json" >> $GITHUB_ENV
-
-      - name: Deploy to Firebase Hosting
-        run: firebase deploy --only hosting --project tambola-premium
+      - name: Deploy to Firebase
+        run: firebase deploy --project tambola-premium --force
+        # The command above deploys all configured Firebase features (hosting, functions, rules, etc.)
+        # If you want to be more specific, you can use:
+        # run: firebase deploy --only hosting,functions --project tambola-premium --force
