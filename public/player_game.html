@@ -12,7 +12,11 @@
     <style>
         body {
             font-family: 'Inter', sans-serif; display: flex; flex-direction: column;
-            min-height: 100vh; padding-top: 70px; padding-bottom: 100px;
+            min-height: 100vh; padding-top: 70px; /* For fixed top nav */
+            /* padding-bottom: 100px; Dynamic based on bottom nav visibility */
+        }
+        main[data-bottom-nav-visible="true"] {
+            padding-bottom: 80px; /* Adjust if bottom nav height changes */
         }
         .flex-grow { flex-grow: 1; }
         ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -95,7 +99,7 @@
                                 <span class="indicator-item badge badge-primary badge-sm" x-text="notifications.length"></span>
                             </template>
                         </label>
-                        <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[50] p-2 shadow bg-base-100 rounded-box w-64 sm:w-80 max-h-96 overflow-y-auto">
+                        <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[60] p-2 shadow bg-base-100 rounded-box w-64 sm:w-80 max-h-96 overflow-y-auto">
                             <template x-if="notifications.length === 0">
                                 <li class="p-2 text-center text-sm text-base-content/70">No new notifications</li>
                             </template>
@@ -116,11 +120,12 @@
                             </template>
                         </ul>
                     </div>
+
                     <div class="dropdown dropdown-end">
                         <label tabindex="0" class="btn btn-ghost btn-circle" aria-label="Theme selector">
                             <i class="fas fa-palette"></i>
                         </label>
-                        <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[50] p-2 shadow bg-base-100 rounded-box w-52">
+                        <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[60] p-2 shadow bg-base-100 rounded-box w-52">
                             <template x-for="theme in themes" :key="theme">
                                 <li><a @click="setTheme(theme, $event)" x-text="theme.charAt(0).toUpperCase() + theme.slice(1)"></a></li>
                             </template>
@@ -132,14 +137,14 @@
                 </div>
             </nav>
 
-            <main class="flex-grow p-4 overflow-y-auto">
+            <main class="flex-grow p-4 overflow-y-auto" :data-bottom-nav-visible="currentView === 'home' || gameStatus === 'running'">
                 <div x-show="currentView === 'home'" x-transition>
                     <div class="mb-6">
                         <h3 class="text-xl font-semibold mb-1 text-center">Room: <span x-text="roomId" class="font-mono"></span></h3>
                         <div class="text-center mb-1">Admin: <span x-text="adminName || 'N/A'"></span></div>
                         <div class="text-center mb-3">Status: <span class="badge badge-lg"
                             :class="{
-                                'badge-neutral': gameStatus === 'idle' || gameStatus === 'connecting' || gameStatus === 'disconnected' || gameStatus === 'loading',
+                                'badge-neutral': gameStatus === 'idle' || gameStatus === 'loading' || gameStatus === 'disconnected',
                                 'badge-success': gameStatus === 'running',
                                 'badge-warning': gameStatus === 'paused',
                                 'badge-error': gameStatus === 'stopped' || gameStatus === 'error'
@@ -155,8 +160,7 @@
                             <template x-if="calledNumbersHistory.length === 0">
                                 <span class="italic text-base-content/70">No numbers called yet.</span>
                             </template>
-                            <template x-for="num in calledNumbersHistory.slice().reverse()" :key="num">
-                                <span class="badge badge-neutral called-number-badge" x-text="num"></span>
+                            <template x-for="num in calledNumbersHistory.slice().reverse().slice(0, 30)" :key="num + '-' + Math.random()"> <span class="badge badge-neutral called-number-badge" x-text="num"></span>
                             </template>
                         </div>
                     </div>
@@ -165,12 +169,12 @@
                         <template x-if="tickets.length === 0 && gameStatus === 'running'">
                             <div class="text-center p-6 bg-base-100 rounded-lg shadow">
                                 <p class="text-lg">You don't have any tickets for this game yet!</p>
-                                <button @click="requestNewTicket" class="btn btn-primary mt-4" :disabled="waitingForTicketApproval || tickets.length >= 5">
+                                <button @click="requestNewTicket()" class="btn btn-primary mt-4" :disabled="waitingForTicketApproval || tickets.length >= 5">
                                     Request a Ticket <span x-show="waitingForTicketApproval">(Pending...)</span>
                                 </button>
                             </div>
                         </template>
-                         <template x-if="tickets.length === 0 && (gameStatus !== 'running')">
+                         <template x-if="tickets.length === 0 && (gameStatus !== 'running' && gameStatus !== 'loading')">
                              <div class="text-center p-6 bg-base-100 rounded-lg shadow">
                                 <p class="text-lg" x-text="gameStatusMessage"></p>
                              </div>
@@ -200,16 +204,54 @@
                     </div>
                 </div>
 
-                <div x-show="currentView === 'players'" x-transition> /* ... as before ... */ </div>
-                <div x-show="currentView === 'rules'" x-transition> /* ... as before ... */ </div>
+                <div x-show="currentView === 'players'" x-transition>
+                     <h2 class="text-2xl font-bold mb-4">Players in Room (<span x-text="roomId"></span>)</h2>
+                    <div class="overflow-x-auto bg-base-100 p-4 rounded-lg shadow">
+                        <table class="table table-zebra w-full table-sm">
+                            <thead><tr><th>#</th><th>Player Name</th><th class="text-center">Tickets</th></tr></thead>
+                            <tbody>
+                                <template x-if="otherPlayersInRoom.length === 0 && !adminName"><tr><td colspan="3" class="text-center italic py-4">No other players visible yet.</td></tr></template>
+                                <tr x-show="adminName"><td>👑</td><td x-text="adminName"></td><td class="text-center">Admin</td></tr>
+                                <template x-for="(player, index) in otherPlayersInRoom" :key="player.id">
+                                    <tr>
+                                        <td x-text="index + 1"></td>
+                                        <td x-text="player.name"></td>
+                                        <td x-text="player.ticketCount" class="text-center"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div x-show="currentView === 'rules'" x-transition>
+                    <h2 class="text-2xl font-bold mb-4">Game Rules & Prizes</h2>
+                     <div class="space-y-3">
+                        <template x-if="gameRules.length === 0">
+                            <p class="text-center italic bg-base-100 p-4 rounded-lg shadow">Rules not loaded yet or no active rules defined by admin.</p>
+                        </template>
+                        <template x-for="rule in gameRules" :key="rule.id">
+                            <div class="card bg-base-100 shadow-md">
+                                <div class="card-body p-4">
+                                    <h3 class="card-title text-lg" x-text="rule.name"></h3>
+                                    <p class="text-xs text-base-content/70" x-text="rule.description"></p>
+                                    <div class="text-sm mt-1">
+                                        <span>Value: <strong x-text="rule.coinsPerPrize ? rule.coinsPerPrize.toFixed(2) : 'N/A'"></strong> Coins</span> |
+                                        <span>Max Winners: <strong x-text="rule.maxPrizes"></strong></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
                 <div x-show="currentView === 'myClaims'" x-transition>
-                     <h2 class="text-2xl font-bold mb-4">My Prize Claims</h2>
+                    <h2 class="text-2xl font-bold mb-4">My Prize Claims</h2>
                     <div class="overflow-x-auto bg-base-100 p-4 rounded-lg shadow">
                         <table class="table table-zebra w-full table-sm">
                             <thead><tr><th>Prize Claimed</th><th>Status</th><th>Reason (if rejected)</th><th>Timestamp</th></tr></thead>
                             <tbody>
                                 <template x-if="myClaims.length === 0"><tr><td colspan="4" class="text-center italic py-4">You haven't made any claims yet.</td></tr></template>
-                                <template x-for="claim in myClaims" :key="claim.claimId"> <tr>
+                                <template x-for="claim in myClaims" :key="claim.id">
+                                    <tr>
                                         <td x-text="claim.prizeName"></td>
                                         <td>
                                             <span class="badge"
@@ -230,19 +272,116 @@
                         </table>
                     </div>
                 </div>
-                <div x-show="currentView === 'myPrizes'" x-transition> /* ... as before ... */ </div>
+                <div x-show="currentView === 'myPrizes'" x-transition>
+                    <h2 class="text-2xl font-bold mb-4">My Won Prizes</h2>
+                    <div class="overflow-x-auto bg-base-100 p-4 rounded-lg shadow">
+                        <table class="table table-zebra w-full table-sm">
+                            <thead><tr><th>Prize Won</th><th>Value (Coins)</th></tr></thead>
+                            <tbody>
+                                <template x-if="myPrizes.length === 0"><tr><td colspan="2" class="text-center italic py-4">You haven't won any prizes yet.</td></tr></template>
+                                <template x-for="prize in myPrizes" :key="prize.id">
+                                    <tr><td x-text="prize.prizeName"></td><td x-text="(prize.coinsAwarded || 0).toFixed(2)"></td></tr>
+                                </template>
+                            </tbody>
+                        </table>
+                         <div class="text-right font-semibold mt-4">Total Coins Won: <span x-text="coinsWon.toFixed(2)"></span></div>
+                    </div>
+                </div>
 
                 <div x-show="gameMessage" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 transform translate-y-2" x-transition:enter-end="opacity-100 transform translate-y-0" x-transition:leave="transition ease-in duration-300" x-transition:leave-start="opacity-100 transform translate-y-0" x-transition:leave-end="opacity-0 transform translate-y-2"
                      class="game-message-popup"
-                     :class="{ /* ... */ }" x-text="gameMessage">
+                     :class="{ 'bg-error text-error-content': gameMessageType === 'error',
+                               'bg-warning text-warning-content': gameMessageType === 'warning',
+                               'bg-info text-info-content': gameMessageType === 'info',
+                               'bg-success text-success-content': gameMessageType === 'success' }"
+                     x-text="gameMessage">
                 </div>
             </main>
         </div>
-        <div class="drawer-side z-[55]"> /* ... Sidebar as before ... */ </div>
+        <div class="drawer-side z-[55]"> <label for="player-drawer" aria-label="close sidebar" class="drawer-overlay"></label>
+            <ul class="menu p-4 w-80 min-h-full bg-base-100 text-base-content">
+                <li class="mb-2 text-center">
+                    <span class="text-lg font-bold">Player Menu</span>
+                    <button @click="isDrawerOpen = false" class="btn btn-ghost btn-sm btn-circle absolute top-2 right-2 lg:hidden">✕</button>
+                </li>
+                <li><a @click="changeView('home')" :class="{ 'active': currentView === 'home' }"><i class="fas fa-ticket-alt mr-2"></i>My Tickets</a></li>
+                <li><a @click="changeView('players')" :class="{ 'active': currentView === 'players' }"><i class="fas fa-users mr-2"></i>Players in Room</a></li>
+                <li><a @click="changeView('rules')" :class="{ 'active': currentView === 'rules' }"><i class="fas fa-gavel mr-2"></i>Game Rules</a></li>
+                <li><a @click="changeView('myClaims')" :class="{ 'active': currentView === 'myClaims' }"><i class="fas fa-hand-paper mr-2"></i>My Claims</a></li>
+                <li><a @click="changeView('myPrizes')" :class="{ 'active': currentView === 'myPrizes' }"><i class="fas fa-trophy mr-2"></i>My Prizes</a></li>
+                 <li class="mt-auto"><a @click="logout()"><i class="fas fa-sign-out-alt mr-2"></i>Logout</a></li>
+            </ul>
+        </div>
     </div>
 
-    <div class="bottom-nav-player-controls"> /* ... Buttons as before ... */ </div>
-    <dialog id="claim_prize_modal" class="modal" x-ref="claimModal"> /* ... Modal as before ... */ </dialog>
+    <div class="bottom-nav-player-controls" x-show="gameStatus === 'running' && currentView === 'home'">
+        <button @click="requestNewTicket()" class="btn btn-secondary btn-sm" :disabled="tickets.length >= 5 || waitingForTicketApproval">
+            <i class="fas fa-plus-circle mr-1"></i> Add Ticket <span x-show="waitingForTicketApproval">(Pending...)</span>
+        </button>
+
+        <button class="btn btn-accent btn-sm" @click="openClaimModal()" :disabled="!canClaimPrize || tickets.length === 0">
+            <i class="fas fa-award mr-1"></i> Claim Prize
+        </button>
+
+        <div class="form-control">
+            <label class="label cursor-pointer py-1">
+                <span class="label-text mr-2">Auto-Mark:</span>
+                <input type="checkbox" class="toggle toggle-primary toggle-sm" x-model="autoMarkNumbers" @change="toggleAutoMarkBehavior()" />
+            </label>
+        </div>
+    </div>
+
+    <dialog id="claim_prize_modal" class="modal" x-ref="claimModal">
+        <div class="modal-box">
+            <form method="dialog"> <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button> </form>
+            <h3 class="font-bold text-lg">Claim a Prize!</h3>
+            <p class="py-2">Select the prize you want to claim for one of your tickets:</p>
+            <div class="form-control mb-3">
+                <label class="label"><span class="label-text">Claim on which ticket?</span></label>
+                <select x-model="selectedTicketIdForClaim" class="select select-bordered w-full">
+                    <template x-for="(ticket, index) in tickets" :key="ticket.id">
+                        <option :value="ticket.id" x-text="'Ticket ' + (index + 1) + (ticket.id ? ' (ID: ' + ticket.id.substring(0,4) + '...)' : '')"></option>
+                    </template>
+                     <template x-if="tickets.length === 0"><option disabled value="">No tickets available</option></template>
+                </select>
+            </div>
+            <div class="space-y-2 max-h-60 overflow-y-auto p-1">
+                <template x-for="prize in availablePrizesToClaim" :key="prize.id">
+                     <button
+                        class="btn btn-outline btn-primary w-full justify-start"
+                        @click="submitPrizeClaim(prize.id)"
+                        :disabled="!selectedTicketIdForClaim || prizeAlreadyClaimedOrWon(prize.id) || prize.claims >= prize.maxPrizes">
+                        <span x-text="prize.name"></span>
+                        (<span x-text="prize.coinsPerPrize ? prize.coinsPerPrize.toFixed(2) : 'N/A'"></span> Coins)
+                        <span x-show="prizeAlreadyClaimedOrWon(prize.id) || prize.claims >= prize.maxPrizes" class="text-xs text-neutral-content/50 ml-auto">(Max Claimed/Won)</span>
+                    </button>
+                </template>
+                <template x-if="availablePrizesToClaim.length === 0 && gameRules.length > 0">
+                    <p class="italic text-center text-sm">All available prizes may have been claimed/won for the active rules, or no rules match your tickets.</p>
+                </template>
+                 <template x-if="gameRules.length === 0">
+                    <p class="italic text-center text-sm">No active prize rules defined by admin for this game.</p>
+                </template>
+            </div>
+            <div class="modal-action mt-4"> <form method="dialog"><button class="btn">Close</button></form> </div>
+        </div>
+         <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <div
+        x-show="gameStatus !== 'loading' && gameStatus !== 'error' && gameStatus !== 'disconnected'"
+        x-transition:enter="transition ease-out duration-300"
+        x-transition:enter-start="opacity-0 transform translate-y-2"
+        x-transition:enter-end="opacity-100 transform translate-y-0"
+        x-transition:leave="transition ease-in duration-200"
+        x-transition:leave-start="opacity-100 transform translate-y-0"
+        x-transition:leave-end="opacity-0 transform translate-y-2"
+        class="fixed bottom-4 right-4 z-[60] sm:bottom-auto sm:top-20 sm:right-4">
+        <span class="badge badge-lg badge-warning gap-2 shadow-md p-3">
+            <i class="fas fa-coins"></i>
+            <span x-text="coinsWon.toFixed(2)"></span>
+        </span>
+    </div>
 
     <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -253,7 +392,7 @@
       // =================================================================================
       // IMPORTANT: REPLACE WITH YOUR WEB APP'S FIREBASE CONFIGURATION
       // =================================================================================
-     const firebaseConfig = {
+      const firebaseConfig = {
     apiKey: "AIzaSyDeQ3YkvRLvPFnpTPz-aDyh9Yr6JNLqWF0",
     authDomain: "tambola-premium.firebaseapp.com",
     projectId: "tambola-premium",
@@ -261,70 +400,78 @@
     messagingSenderId: "431036089573",
     appId: "1:431036089573:web:523500fb519d887535800c",
     measurementId: "G-EQHHTY8QKE"
-
       };
       // =================================================================================
 
       // Initialize Firebase
       let firebaseApp;
-      if (!firebase.apps.length) {
-          firebaseApp = firebase.initializeApp(firebaseConfig);
+      if (!firebase.apps.length) { //
+          firebaseApp = firebase.initializeApp(firebaseConfig); //
       } else {
-          firebaseApp = firebase.app();
+          firebaseApp = firebase.app(); //
       }
-      const auth = firebase.auth();
+      const auth = firebase.auth(); //
       const db = firebase.firestore(); // Firestore instance
       const functions = firebase.functions(); // Firebase Functions instance
+      // Optional: for local testing with emulators
+      // if (location.hostname === "localhost") { 
+      //    db.useEmulator("localhost", 8080);
+      //    functions.useEmulator("localhost", 5001); 
+      //    auth.useEmulator("http://localhost:9099"); 
+      // }
     </script>
 
     <script>
     function playerGame() {
         return {
-            // Core Player Info from localStorage (set by player_join.html)
-            playerName: '',
-            firebaseUserId: null, // Authenticated User ID
-            firebaseUserEmail: '',
-            roomId: '',
+            // Core Player Info
+            playerName: '', firebaseUserId: null, firebaseUserEmail: '', roomId: '',
+            adminName: '',
 
             // UI State
-            adminName: '', // Fetched from Firestore room data
-            isDrawerOpen: false,
-            currentView: 'home',
-            themes: ["light", "dark", "cupcake", /* ... other themes ... */ "winter"],
+            isDrawerOpen: false, currentView: 'home',
+            themes: ["light", "dark", "cupcake", "bumblebee", "emerald", "corporate", "synthwave", "retro", "cyberpunk", "valentine", "halloween", "garden", "forest", "aqua", "lofi", "pastel", "fantasy", "wireframe", "black", "luxury", "dracula", "cmyk", "autumn", "business", "acid", "lemonade", "night", "coffee", "winter"],
             notifications: [],
 
-            // Game Data (synced from Firestore)
-            tickets: [], // Array of ticket objects { id, numbers (2D array), marked (1D array of numbers) }
-            calledNumbersHistory: [],
-            latestCalledNumber: null,
-            autoMarkNumbers: true,
-            tempBoogieCells: [],
+            // Game Data
+            tickets: [], // { id, numbers: [[],[],[]], marked: [] }
+            calledNumbersHistory: [], latestCalledNumber: null,
+            autoMarkNumbers: true, tempBoogieCells: [],
 
-            // Room & Game Info from Firestore
-            otherPlayersInRoom: [], // { id (UID), name, ticketCount }
-            gameRules: [],    // { id, name, description, coinsPerPrize, maxPrizes, isActive }
-            myClaims: [],     // { claimId, prizeName, prizeRuleId, status, reason, claimTimestamp, isOptimistic }
-            myPrizes: [],     // { id (prize instance id), prizeName, coins }
+            // Room & Game Info from Server/Firestore
+            otherPlayersInRoom: [],
+            gameRules: [],    // Active rules from room
+            myClaims: [],     // { id (claim doc id), prizeName, prizeRuleId, status, reason, claimTimestamp, isOptimistic, clientTempClaimId }
+            myPrizes: [],     // { id (claim doc id), prizeName, coinsAwarded }
             coinsWon: 0,
 
             // UI Interaction State
-            waitingForTicketApproval: false, // This might change based on how new tickets are handled
+            waitingForTicketApproval: false,
             canClaimPrize: false,
             availablePrizesToClaim: [],
             selectedTicketIdForClaim: null,
 
             // Game Status & Messaging
             gameStatus: 'loading', // 'loading', 'idle', 'running', 'paused', 'stopped', 'error', 'disconnected'
-            gameMessage: '',
-            gameMessageType: 'info',
-            gameMessageTimeout: null,
+            _previousGameStatus: 'loading', // To detect status changes for notifications
+            gameMessage: '', gameMessageType: 'info', gameMessageTimeout: null,
 
             // Firestore listeners unsubscribe functions
             roomListenerUnsubscribe: null,
-            ticketsListenerUnsubscribe: null,
-            claimsListenerUnsubscribe: null,
+            playerTicketsListenerUnsubscribe: null,
+            playerClaimsListenerUnsubscribe: null,
 
-            get gameStatusMessage() { /* ... as before ... */ },
+            get gameStatusMessage() {
+                switch(this.gameStatus) {
+                    case 'loading': return 'Loading game data...';
+                    case 'idle': return 'Waiting for the game to start...';
+                    case 'stopped': return 'The game has ended. Thank you for playing!';
+                    case 'disconnected': return 'Disconnected. Please refresh.';
+                    case 'error': return 'A connection error occurred. Please refresh.';
+                    case 'paused': return 'Game is paused by Admin.';
+                    default: return `Game status: ${this.gameStatus}`;
+                }
+            },
 
             init() {
                 const savedTheme = localStorage.getItem('theme') || 'light';
@@ -336,33 +483,40 @@
                 this.firebaseUserEmail = localStorage.getItem('firebaseUserEmail') || null;
 
                 if (!this.firebaseUserId || !this.roomId) {
-                    this.showGameMessage("User session or Room ID missing. Please rejoin.", "error", null);
+                    this.showGameMessage("Session or Room ID missing. Please rejoin.", "error", null);
                     this.gameStatus = 'error';
-                    // Redirect to join page if critical info is missing
                     setTimeout(() => { window.location.href = 'player_join.html'; }, 3000);
                     return;
                 }
-                this.showGameMessage("Loading game data...", "info", null);
+                
                 this.setupFirestoreListeners();
-                this.fetchPlayerTickets(); // Fetch initial tickets
 
                 this.$watch('tickets', (newTickets) => {
                     if (newTickets.length > 0 && !this.selectedTicketIdForClaim) {
                         this.selectedTicketIdForClaim = newTickets[0].id;
-                    } else if (newTickets.length === 0) {
-                        this.selectedTicketIdForClaim = null;
-                    }
-                     this.updateCanClaimPrizeStatus(); // Re-evaluate when tickets change
+                    } else if (newTickets.length === 0) { this.selectedTicketIdForClaim = null; }
+                    this.updateCanClaimPrizeStatus();
                 });
-                 this.$watch('gameRules', () => this.updateAvailablePrizes());
-                 this.$watch('myClaims', () => this.updateAvailablePrizes());
-                 this.$watch('myPrizes', () => this.updateAvailablePrizes());
+                this.$watch('gameRules', () => this.updateAvailablePrizes());
+                this.$watch('myClaims', () => this.updateAvailablePrizes(), {deep: true}); // Deep watch for status changes
+                this.$watch('myPrizes', () => this.updateAvailablePrizes(), {deep: true});
+                this.$watch('gameStatus', (newStatus, oldStatus) => {
+                     this._previousGameStatus = oldStatus; // Store old status correctly for comparison
+                     this.updateCanClaimPrizeStatus();
+                     if (newStatus === 'running' && oldStatus === 'idle') { // Game just started
+                        this.myClaims = []; this.myPrizes = []; this.coinsWon = 0; // Reset player's claims/prizes for new game
+                        this.addNotification('Game Event', 'A new game has started!', 'home');
+                     } else if (newStatus === 'stopped' && oldStatus !== 'stopped') {
+                        this.addNotification('Game Event', 'The game has ended.', 'home');
+                     }
+                });
             },
 
             setupFirestoreListeners() {
-                if (!this.roomId) return;
+                if (!this.roomId || !this.firebaseUserId) return;
+                this.showGameMessage("Connecting to game room...", "info", null);
 
-                // 1. Listen to the Room document for game state
+                // 1. Room Document Listener
                 const roomRef = db.collection('rooms').doc(this.roomId);
                 this.roomListenerUnsubscribe = roomRef.onSnapshot((doc) => {
                     if (doc.exists) {
@@ -370,253 +524,170 @@
                         this.gameStatus = roomData.gameStatus || 'idle';
                         this.calledNumbersHistory = roomData.currentNumbersCalled || [];
                         this.latestCalledNumber = roomData.currentLatestCalledNumber || null;
-                        this.gameRules = roomData.rules?.filter(r => r.isActive) || []; // Only active rules for player
+                        this.gameRules = roomData.rules?.filter(r => r.isActive && (parseInt(r.claims) || 0) < (parseInt(r.maxPrizes) || 1) ) || [];
                         this.adminName = roomData.adminDisplayName || 'Admin';
-                        // Update otherPlayersInRoom based on roomData.currentActivePlayers (map)
                         this.otherPlayersInRoom = roomData.currentActivePlayers ?
                             Object.entries(roomData.currentActivePlayers)
-                                .filter(([uid, _]) => uid !== this.firebaseUserId) // Exclude self
+                                .filter(([uid, _]) => uid !== this.firebaseUserId)
                                 .map(([uid, playerData]) => ({ id: uid, name: playerData.playerName, ticketCount: playerData.ticketCount || 0 }))
                             : [];
 
-                        // Handle called numbers if autoMark is on
-                        if (this.autoMarkNumbers && roomData.currentLatestCalledNumber &&
-                            !this.calledNumbersHistory.slice(0,-1).includes(roomData.currentLatestCalledNumber) ) { // Process only new numbers for marking
-                            this.markNumberOnTickets(roomData.currentLatestCalledNumber);
-                        }
-                        this.updateAvailablePrizes();
-                        this.updateCanClaimPrizeStatus();
-                        if(this.gameMessage === "Loading game data..."){ this.showGameMessage("Game data loaded!", "success", 2000); }
-
-                        // Handle game start/stop notifications based on status change
-                        // (More refined logic might be needed to prevent multiple notifications for same event)
-                        if(this._previousGameStatus !== this.gameStatus) {
-                            if(this.gameStatus === 'running' && this._previousGameStatus === 'idle'){
-                                this.addNotification('Game Event', 'The game has started!', 'home');
-                                this.myClaims = []; this.myPrizes = []; this.coinsWon = 0; // Reset for new game
-                            } else if (this.gameStatus === 'stopped' && this._previousGameStatus !== 'stopped') {
-                                const endMsg = "Game has ended.";
-                                this.addNotification('Game Event', endMsg, 'home');
-                            }
-                        }
-                        this._previousGameStatus = this.gameStatus;
-
-
+                        if (this.autoMarkNumbers && this.latestCalledNumber) { this.markNumberOnTickets(this.latestCalledNumber); }
+                        
+                        if(this.gameMessage === "Connecting to game room...") {this.showGameMessage("Connected! Game data loaded.", "success", 2000);}
                     } else {
-                        this.showGameMessage(`Room ${this.roomId} not found or game not set up.`, "error", null);
-                        this.gameStatus = 'error';
+                        this.showGameMessage(`Room ${this.roomId} not found.`, "error", null); this.gameStatus = 'error';
                     }
-                }, (error) => {
-                    console.error("Error listening to room updates:", error);
-                    this.showGameMessage("Error syncing game data. Please refresh.", "error", null);
-                    this.gameStatus = 'error';
-                });
+                }, (error) => { console.error("Room listener error:", error); this.showGameMessage("Error syncing room data.", "error"); this.gameStatus = 'error'; });
 
-                // 2. Listen to player's claims from prizeClaimsAudit
-                this.claimsListenerUnsubscribe = db.collection('prizeClaimsAudit')
+                // 2. Player's Tickets Listener
+                this.playerTicketsListenerUnsubscribe = db.collection('gameTickets')
                     .where('userId', '==', this.firebaseUserId)
                     .where('roomId', '==', this.roomId)
-                    // .orderBy('claimTimestamp', 'desc') // Optional: order by time
                     .onSnapshot(snapshot => {
-                        let newClaims = [];
-                        let claimsUpdated = false;
+                        const fetchedTickets = [];
+                        let newTicketAdded = false;
                         snapshot.docChanges().forEach(change => {
-                            const claimData = { id: change.doc.id, claimId: change.doc.id, ...change.doc.data() };
+                            const ticketData = { id: change.doc.id, ...change.doc.data(), marked: change.doc.data().marked || [] };
                             if (change.type === "added") {
-                                newClaims.push(claimData);
-                                claimsUpdated = true;
-                                if(claimData.status === 'approved' && !this.myPrizes.some(p => p.id === 'prize_' + claimData.id)) {
-                                     if (!this.myPrizes.some(p => p.id === 'prize_' + claimData.claimId)) {
-                                        this.myPrizes.push({ id: 'prize_' + claimData.claimId, prizeName: claimData.prizeName, coins: claimData.coinsAwarded || 0 });
-                                        this.coinsWon = parseFloat(((this.coinsWon || 0) + (claimData.coinsAwarded || 0)).toFixed(2));
-                                     }
-                                    this.addNotification('Prize Won!', `Your claim for ${claimData.prizeName} was APPROVED!`, 'myPrizes', claimData.claimId);
-                                } else if (claimData.status === 'rejected') {
-                                     this.addNotification('Claim Update', `Your claim for ${claimData.prizeName} was REJECTED.`, 'myClaims', claimData.claimId);
-                                }
+                                fetchedTickets.push(ticketData);
+                                if (!this.tickets.some(t => t.id === ticketData.id)) newTicketAdded = true; // Check if actually new
                             }
-                            if (change.type === "modified") {
-                                const index = this.myClaims.findIndex(c => c.claimId === claimData.claimId);
-                                if (index !== -1) {
-                                    this.myClaims.splice(index, 1, claimData);
-                                } else {
-                                    newClaims.push(claimData); // If modified but not found, add
+                            // Can handle 'modified' or 'removed' if tickets can change structure or be deleted during game
+                        });
+                        if (fetchedTickets.length > 0) { // Merge new tickets without removing existing ones unless a full refresh is intended
+                             this.tickets = [...this.tickets.filter(existing => !fetchedTickets.some(ft => ft.id === existing.id)), ...fetchedTickets];
+                        }
+                        if (newTicketAdded) { this.addNotification('Ticket Update', 'Your new ticket is ready!', 'home'); this.triggerConfetti(); }
+                        if (this.autoMarkNumbers && this.latestCalledNumber) { this.markNumberOnTickets(this.latestCalledNumber); } // Re-mark if new tickets arrived
+                    }, error => { console.error("Player tickets listener error:", error); this.showGameMessage("Error syncing your tickets.", "error");});
+
+                // 3. Player's Claims Listener (from prizeClaimsAudit)
+                this.playerClaimsListenerUnsubscribe = db.collection('prizeClaimsAudit')
+                    .where('userId', '==', this.firebaseUserId)
+                    .where('roomId', '==', this.roomId)
+                    .orderBy('claimTimestamp', 'desc')
+                    .onSnapshot(snapshot => {
+                        snapshot.docChanges().forEach(change => {
+                            const claimData = { id: change.doc.id, ...change.doc.data() };
+                            const existingClaimIndex = this.myClaims.findIndex(c => c.id === claimData.id || c.clientTempClaimId === claimData.clientTempClaimId);
+
+                            if (change.type === "added" || change.type === "modified") {
+                                if (existingClaimIndex !== -1) { // Update existing
+                                    this.myClaims.splice(existingClaimIndex, 1, claimData);
+                                } else { // Add new
+                                    this.myClaims.unshift(claimData); // Add to top for visibility
                                 }
-                                claimsUpdated = true;
-                                // Handle notifications for modified claims (e.g., status change)
-                                if(claimData.status === 'approved' && !this.myPrizes.some(p => p.id === 'prize_' + claimData.id)) {
-                                    if (!this.myPrizes.some(p => p.id === 'prize_' + claimData.claimId)) {
-                                        this.myPrizes.push({ id: 'prize_' + claimData.claimId, prizeName: claimData.prizeName, coins: claimData.coinsAwarded || 0 });
+                                // Notifications & update prizes for 'approved' status
+                                if (claimData.status === 'approved') {
+                                    if (!this.myPrizes.some(p => p.id === claimData.id)) { // Avoid duplicates
+                                        this.myPrizes.push({ id: claimData.id, prizeName: claimData.prizeName, coinsAwarded: claimData.coinsAwarded || 0 });
                                         this.coinsWon = parseFloat(((this.coinsWon || 0) + (claimData.coinsAwarded || 0)).toFixed(2));
-                                     }
-                                    this.addNotification('Prize Won!', `Your claim for ${claimData.prizeName} was APPROVED!`, 'myPrizes', claimData.claimId);
+                                        this.addNotification('Prize Won!', `Claim for ${claimData.prizeName} APPROVED!`, 'myPrizes', claimData.id);
+                                        this.triggerConfetti();
+                                    }
                                 } else if (claimData.status === 'rejected') {
-                                     this.addNotification('Claim Update', `Your claim for ${claimData.prizeName} was REJECTED. Reason: ${claimData.reason || ''}`, 'myClaims', claimData.claimId);
+                                    this.addNotification('Claim Update', `Claim for ${claimData.prizeName} REJECTED. Reason: ${claimData.reason || ''}`, 'myClaims', claimData.id);
+                                } else if (change.type === "added" && claimData.status !== 'approved' && claimData.status !== 'rejected') { // e.g. pending_admin_approval
+                                     this.addNotification('Claim Submitted', `Your claim for ${claimData.prizeName} is pending review.`, 'myClaims', claimData.id);
                                 }
-                            }
-                            if (change.type === "removed") {
-                                this.myClaims = this.myClaims.filter(c => c.claimId !== claimData.claimId);
-                                claimsUpdated = true;
+                            } else if (change.type === "removed") {
+                                this.myClaims = this.myClaims.filter(c => c.id !== claimData.id);
                             }
                         });
-                        if (newClaims.length > 0) {
-                            this.myClaims = [...this.myClaims, ...newClaims].sort((a,b) => (b.claimTimestamp?.seconds || 0) - (a.claimTimestamp?.seconds || 0) );
-                        }
-                        if(claimsUpdated) this.updateAvailablePrizes();
-                    }, error => {
-                        console.error("Error listening to player claims:", error);
-                        this.showGameMessage("Error syncing your prize claims.", "error");
-                    });
+                        // Ensure claims are sorted if new ones are just pushed
+                        this.myClaims.sort((a,b) => (b.claimTimestamp?.seconds || 0) - (a.claimTimestamp?.seconds || 0) );
+                    }, error => { console.error("Player claims listener error:", error); this.showGameMessage("Error syncing your prize claims.", "error");});
             },
 
-            fetchPlayerTickets() {
-                if (!this.firebaseUserId || !this.roomId) return;
-                this.showGameMessage("Fetching your tickets...", "info");
-                db.collection('gameTickets')
-                  .where('userId', '==', this.firebaseUserId)
-                  .where('roomId', '==', this.roomId) // Add more filters if tickets are gameSession specific
-                  .get()
-                  .then(snapshot => {
-                      const fetchedTickets = [];
-                      snapshot.forEach(doc => {
-                          fetchedTickets.push({ id: doc.id, ...doc.data(), marked: doc.data().marked || [] });
-                      });
-                      this.tickets = fetchedTickets;
-                      if (this.tickets.length > 0 && !this.selectedTicketIdForClaim) {
-                        this.selectedTicketIdForClaim = this.tickets[0].id;
-                      }
-                      this.updateCanClaimPrizeStatus();
-                      this.showGameMessage(this.tickets.length > 0 ? "Tickets loaded." : "No tickets found for you in this room.", this.tickets.length > 0 ? "success" : "info");
-                  })
-                  .catch(error => {
-                      console.error("Error fetching player tickets:", error);
-                      this.showGameMessage("Could not load your tickets.", "error");
-                  });
+            addNotification(type, message, targetView, relatedId = null) {
+                const newNotification = { id: Date.now() + Math.random().toString(36).substr(2,9), type, message, targetView, relatedId, timestamp: Date.now() };
+                this.notifications.unshift(newNotification); if (this.notifications.length > 10) this.notifications.pop();
             },
+            handleNotificationClick(notification) {
+                if(notification.targetView) this.changeView(notification.targetView);
+                this.notifications = this.notifications.filter(n => n.id !== notification.id);
+                if (document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur();
+            },
+            clearAllNotifications() { this.notifications = []; if (document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur(); },
 
-            // Notification System Methods
-            addNotification(type, message, targetView, relatedId = null) { /* ... as before ... */ },
-            handleNotificationClick(notification) { /* ... as before ... */ },
-            clearAllNotifications() { /* ... as before ... */ },
-
-            // Game Actions & UI Logic (to be updated for Firestore/Cloud Functions)
-            markNumberOnTickets(numberToMark) { /* ... as before ... */ },
-            manualMarkNumber(ticketId, number) { /* ... as before ... */ },
-            toggleAutoMarkBehavior() { /* ... as before ... */ },
-
+            markNumberOnTickets(numberToMark) { this.tickets.forEach(ticket => { if (!ticket.marked) ticket.marked = []; let numExistsOnTicket = false; for (const row of ticket.numbers) { if (row.includes(numberToMark)) { numExistsOnTicket = true; break; } } if (numExistsOnTicket && !ticket.marked.includes(numberToMark)) { ticket.marked.push(numberToMark); } }); },
+            manualMarkNumber(ticketId, number) { if (number === null || this.gameStatus !== 'running') return; if (this.autoMarkNumbers) { this.showGameMessage("Auto-mark is ON. Called numbers are marked automatically.", "info"); return; } const ticket = this.tickets.find(t => t.id === ticketId); if (ticket) { if (this.calledNumbersHistory.includes(number)) { const index = ticket.marked.indexOf(number); if (index > -1) ticket.marked.splice(index, 1); else { ticket.marked.push(number); this.triggerConfetti(); } } else { this.showGameMessage(`Number ${number} has not been called yet! Boogie!`, "error"); const boogieCellId = ticketId + '-' + number; this.tempBoogieCells.push(boogieCellId); setTimeout(() => { this.tempBoogieCells = this.tempBoogieCells.filter(id => id !== boogieCellId); }, 1000); } } },
+            toggleAutoMarkBehavior() { if (this.autoMarkNumbers) { this.showGameMessage("Auto-marking ENABLED.", "info"); this.calledNumbersHistory.forEach(calledNum => this.markNumberOnTickets(calledNum)); } else { this.showGameMessage("Auto-marking DISABLED. Mark your numbers manually.", "warning"); } },
+            
             async requestNewTicket() {
                 if (this.tickets.length >= 5) { this.showGameMessage("Max 5 tickets allowed.", "warning"); return; }
-                if (this.gameStatus !== 'running') { this.showGameMessage("Game not running.", "warning"); return; }
-                this.waitingForTicketApproval = true;
-                this.showGameMessage("Requesting new ticket...", "info");
+                if (this.gameStatus !== 'running') { this.showGameMessage("Game not running. Cannot request ticket.", "warning"); return; }
+                this.waitingForTicketApproval = true; this.showGameMessage("Requesting new ticket...", "info");
                 try {
-                    const requestTicketFunction = functions.httpsCallable('requestTicket'); // Ensure you have this CF
-                    const result = await requestTicketFunction({ roomId: this.roomId, userId: this.firebaseUserId });
-                    if (result.data.success) {
-                        this.showGameMessage(result.data.message || "Ticket request sent to admin for approval.", "success");
-                        // Server will notify admin, admin approval will trigger ticket assignment via Firestore.
-                        // Client will get new ticket via its Firestore listener for gameTickets or player object.
-                        // For now, we assume the admin needs to approve, and the listener will pick up the new ticket.
-                    } else {
-                        this.showGameMessage(result.data.message || "Failed to request ticket.", "error");
+                    const requestTicketFunction = functions.httpsCallable('requestTicket');
+                    const result = await requestTicketFunction({ roomId: this.roomId, userId: this.firebaseUserId, playerName: this.playerName });
+                    if (result.data.success) { this.showGameMessage(result.data.message || "Ticket request sent for admin approval.", "success"); }
+                    else { this.showGameMessage(result.data.message || "Failed to request ticket.", "error"); }
+                } catch (error) { console.error("Error requesting new ticket:", error); this.showGameMessage("Error requesting ticket: " + error.message, "error");
+                } finally { this.waitingForTicketApproval = false; }
+            },
+
+            openClaimModal() { if (this.tickets.length === 0) { this.showGameMessage("No tickets to claim on.", "warning"); return; } if (!this.selectedTicketIdForClaim && this.tickets.length > 0) this.selectedTicketIdForClaim = this.tickets[0].id; this.updateAvailablePrizes(); if (this.$refs.claimModal) this.$refs.claimModal.showModal(); },
+            updateAvailablePrizes() { this.availablePrizesToClaim = this.gameRules.filter(rule => { if (!rule.isActive) return false; const maxClaimsReached = (parseInt(rule.claims) || 0) >= (parseInt(rule.maxPrizes) || 1); const alreadyWonByPlayer = this.myPrizes.some(p => p.prizeName === rule.name); const pendingOrApprovedClaimByPlayer = this.myClaims.some(c => c.prizeName === rule.name && (c.status === 'approved' || c.status === 'pending_admin_approval' || c.status === 'pending_submission')); return !maxClaimsReached && !alreadyWonByPlayer && !pendingOrApprovedClaimByPlayer; }); },
+            prizeAlreadyClaimedOrWon(prizeRuleId) { const rule = this.gameRules.find(r => r.id === prizeRuleId); if(!rule) return false; const maxClaimsReached = (parseInt(rule.claims) || 0) >= (parseInt(rule.maxPrizes) || 1); return maxClaimsReached || this.myPrizes.some(prize => prize.prizeName === rule.name) || this.myClaims.some(claim => claim.prizeName === rule.name && (claim.status === 'approved' || c.status === 'pending_admin_approval' || c.status === 'pending_submission')); },
+
+            async submitPrizeClaim(prizeRuleId) {
+                if (!this.selectedTicketIdForClaim) { this.showGameMessage("Please select a ticket to claim on.", "warning"); return; }
+                const rule = this.gameRules.find(r => r.id === prizeRuleId);
+                if (!rule) { this.showGameMessage("Selected prize rule not found.", "error"); return; }
+                if (this.prizeAlreadyClaimedOrWon(prizeRuleId)) { this.showGameMessage(`Prize ${rule.name} already claimed/won or max claims reached.`, "info"); if (this.$refs.claimModal) this.$refs.claimModal.close(); return; }
+
+                const clientTempClaimId = `client_${this.firebaseUserId}_${prizeRuleId}_${Date.now()}`;
+                // Optimistic UI update
+                this.myClaims.unshift({
+                    id: clientTempClaimId, clientTempClaimId: clientTempClaimId, prizeName: rule.name, prizeRuleId: prizeRuleId,
+                    status: 'pending_submission', reason: '', isOptimistic: true,
+                    claimTimestamp: { seconds: Math.floor(Date.now()/1000), nanoseconds: 0 }
+                });
+                this.updateAvailablePrizes(); // Refresh available prizes list
+                this.showGameMessage(`Submitting claim for ${rule.name}...`, "info");
+                if (this.$refs.claimModal) this.$refs.claimModal.close();
+
+                try {
+                    const submitClaimFunction = functions.httpsCallable('submitPrizeClaim');
+                    const result = await submitClaimFunction({
+                        roomId: this.roomId, userId: this.firebaseUserId, playerName: this.playerName,
+                        prizeRuleId: prizeRuleId, prizeName: rule.name, ticketId: this.selectedTicketIdForClaim,
+                        clientTempClaimId: clientTempClaimId // Send client temp ID for matching response
+                    });
+                    if (!result.data.success) { // Server indicates failure
+                        this.showGameMessage(result.data.message || "Failed to submit claim.", "error");
+                        this.myClaims = this.myClaims.filter(c => c.clientTempClaimId !== clientTempClaimId); // Remove optimistic
+                        this.updateAvailablePrizes(); // Refresh available
                     }
+                    // If success, Firestore listener on prizeClaimsAudit will handle updating the claim status from 'pending_submission'.
                 } catch (error) {
-                    console.error("Error requesting new ticket:", error);
-                    this.showGameMessage("Error requesting ticket: " + error.message, "error");
-                } finally {
-                    this.waitingForTicketApproval = false;
+                    console.error("Error submitting prize claim:", error);
+                    this.showGameMessage("Error submitting claim: " + error.message, "error");
+                    this.myClaims = this.myClaims.filter(c => c.clientTempClaimId !== clientTempClaimId); // Remove optimistic
+                    this.updateAvailablePrizes(); // Refresh available
                 }
             },
 
-            openClaimModal() { /* ... as before ... */ },
-            updateAvailablePrizes() { /* ... as before ... */ },
-            prizeAlreadyClaimedOrWon(prizeRuleId) { /* ... as before ... */ },
-
-            async submitPrizeClaim(prizeRuleId) {
-                if (!this.selectedTicketIdForClaim) { this.showGameMessage("Please select a ticket.", "warning"); return; }
-                const rule = this.gameRules.find(r => r.id === prizeRuleId);
-                if (rule) {
-                    if (this.myClaims.some(c => c.prizeRuleId === prizeRuleId && (c.status === 'pending_admin_approval' || c.status === 'approved' || c.status === 'pending_submission'))) {
-                        this.showGameMessage(`A claim for ${rule.name} is already submitted or processed.`, "info");
-                        if (this.$refs.claimModal) this.$refs.claimModal.close();
-                        return;
-                    }
-
-                    const clientTempClaimId = `client_${this.firebaseUserId}_${prizeRuleId}_${Date.now()}`;
-                    this.myClaims.unshift({ // Add to start for immediate visibility
-                        claimId: clientTempClaimId, prizeName: rule.name, prizeRuleId: prizeRuleId,
-                        status: 'pending_submission', reason: '', isOptimistic: true,
-                        claimTimestamp: { seconds: Math.floor(Date.now()/1000) } // Mock timestamp for sorting
-                    });
-
-                    this.showGameMessage(`Submitting claim for ${rule.name}...`, "info");
-                    if (this.$refs.claimModal) this.$refs.claimModal.close();
-
-                    try {
-                        const submitClaimFunction = functions.httpsCallable('submitPrizeClaim'); // Ensure CF name
-                        const result = await submitClaimFunction({
-                            roomId: this.roomId,
-                            userId: this.firebaseUserId,
-                            playerName: this.playerName,
-                            prizeRuleId: prizeRuleId,
-                            prizeName: rule.name, // Send prize name for logging/display in claim doc
-                            ticketId: this.selectedTicketIdForClaim,
-                            clientTempClaimId: clientTempClaimId
-                        });
-
-                        if (result.data.success) {
-                            // The PLAYER_CLAIM_SUBMITTED equivalent logic is handled by the Firestore listener on 'prizeClaimsAudit'
-                            // We update the optimistic entry with the server's ID when the listener fires.
-                            // this.showGameMessage(result.data.message || "Claim submitted for review!", "success");
-                        } else {
-                            this.showGameMessage(result.data.message || "Failed to submit claim.", "error");
-                            this.myClaims = this.myClaims.filter(c => c.claimId !== clientTempClaimId); // Remove optimistic if failed
-                        }
-                    } catch (error) {
-                        console.error("Error submitting prize claim:", error);
-                        this.showGameMessage("Error submitting claim: " + error.message, "error");
-                        this.myClaims = this.myClaims.filter(c => c.claimId !== clientTempClaimId); // Remove optimistic
-                    }
-                } else { this.showGameMessage("Selected prize rule not found.", "error"); }
-            },
-
-            updateCanClaimPrizeStatus() { /* ... as before ... */ },
-            triggerConfetti() { /* ... as before ... */ },
-            setTheme(themeName, event = null, closeDropdown = true) { /* ... as before ... */ },
-            changeView(viewName) { /* ... as before ... */ },
+            updateCanClaimPrizeStatus() { this.canClaimPrize = this.gameStatus === 'running' && this.availablePrizesToClaim.length > 0 && this.tickets.length > 0; },
+            triggerConfetti() { if (typeof confetti === 'function') confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 }, zIndex: 2000 }); },
+            setTheme(themeName, event = null, closeDropdown = true) { document.documentElement.setAttribute('data-theme', themeName); localStorage.setItem('theme', themeName); if (closeDropdown && event && event.target) { const anchorElement = event.target; const dropdownRoot = anchorElement.closest('.dropdown'); const dropdownTriggerLabel = dropdownRoot?.querySelector('label[tabindex="0"]'); setTimeout(() => { if (document.activeElement && dropdownRoot && dropdownRoot.contains(document.activeElement)) { if (typeof document.activeElement.blur === 'function') document.activeElement.blur(); } if (dropdownTriggerLabel && typeof dropdownTriggerLabel.blur === 'function') dropdownTriggerLabel.blur(); }, 0);}},
+            changeView(viewName) { this.currentView = viewName; this.isDrawerOpen = false; },
             logout() {
                 this.showGameMessage("Logging out...", "info", 1500);
+                if (this.roomListenerUnsubscribe) this.roomListenerUnsubscribe();
+                if (this.playerTicketsListenerUnsubscribe) this.playerTicketsListenerUnsubscribe();
+                if (this.playerClaimsListenerUnsubscribe) this.playerClaimsListenerUnsubscribe();
                 auth.signOut().then(() => {
-                    // Clear listeners
-                    if (this.roomListenerUnsubscribe) this.roomListenerUnsubscribe();
-                    if (this.ticketsListenerUnsubscribe) this.ticketsListenerUnsubscribe();
-                    if (this.claimsListenerUnsubscribe) this.claimsListenerUnsubscribe();
-
-                    localStorage.removeItem('playerName');
-                    localStorage.removeItem('roomId');
-                    localStorage.removeItem('firebaseUserId');
-                    localStorage.removeItem('firebaseUserEmail');
+                    localStorage.removeItem('playerName'); localStorage.removeItem('roomId');
+                    localStorage.removeItem('firebaseUserId'); localStorage.removeItem('firebaseUserEmail');
                     window.location.href = 'player_join.html';
-                }).catch(error => {
-                    console.error("Logout error:", error);
-                    this.showGameMessage("Logout failed.", "error");
-                });
+                }).catch(error => { console.error("Logout error:", error); this.showGameMessage("Logout failed.", "error"); });
             },
-            showGameMessage(text, type = 'info', duration = 3000) { /* ... as before ... */ }
+            showGameMessage(text, type = 'info', duration = 3500) { this.gameMessage = text; this.gameMessageType = type; if (this.gameMessageTimeout) clearTimeout(this.gameMessageTimeout); if (duration !== null) { this.gameMessageTimeout = setTimeout(() => { this.gameMessage = ''; }, duration);}}
         }
     }
     </script>
-
-    <div x-show="gameStatus !== 'connecting' && gameStatus !== 'error' && gameStatus !== 'disconnected' && gameStatus !== 'loading'"
-        x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 transform translate-y-2"
-        x-transition:enter-end="opacity-100 transform translate-y-0" x-transition:leave="transition ease-in duration-200"
-        x-transition:leave-start="opacity-100 transform translate-y-0" x-transition:leave-end="opacity-0 transform translate-y-2"
-        class="fixed bottom-4 right-4 z-[60]">
-        <span class="badge badge-lg badge-warning gap-2 shadow-md p-3">
-            <i class="fas fa-coins"></i>
-            <span x-text="coinsWon.toFixed(2)"></span>
-        </span>
-    </div>
-
 </body>
 </html>
