@@ -142,32 +142,31 @@
     messagingSenderId: "431036089573",
     appId: "1:431036089573:web:523500fb519d887535800c",
     measurementId: "G-EQHHTY8QKE"
-
       };
       // =================================================================================
 
       // Initialize Firebase
-      if (!firebase.apps.length) {
-          firebase.initializeApp(firebaseConfig);
+      if (!firebase.apps.length) { //
+          firebase.initializeApp(firebaseConfig); //
       }
-      const auth = firebase.auth(); // Firebase Auth instance
+      const auth = firebase.auth(); // Firebase Auth instance //
     </script>
 
     <script>
         function playerJoin() {
             return {
-                playerName: '',
-                roomId: '',
-                email: '',
-                emailSent: false,
-                currentUser: null,
-                isLoading: false,
-                isSigningIn: false,
+                playerName: '', //
+                roomId: '', //
+                email: '', //
+                emailSent: false, //
+                currentUser: null, //
+                isLoading: false, //
+                isSigningIn: false, // Tracks if sign-in link is being processed
 
-                message: '',
-                messageType: '',
-                errors: { email: '', playerName: '', roomId: '' },
-                themes: [
+                message: '', //
+                messageType: '', //
+                errors: { email: '', playerName: '', roomId: '' }, //
+                themes: [ //
                     "light", "dark", "cupcake", "bumblebee", "emerald", "corporate",
                     "synthwave", "retro", "cyberpunk", "valentine", "halloween",
                     "garden", "forest", "aqua", "lofi", "pastel", "fantasy",
@@ -176,177 +175,176 @@
                 ],
 
                 init() {
-                    const savedTheme = localStorage.getItem('theme') || 'light';
-                    this.setTheme(savedTheme, null, false);
+                    const savedTheme = localStorage.getItem('theme') || 'light'; //
+                    this.setTheme(savedTheme, null, false); //
 
-                    const urlParams = new URLSearchParams(window.location.search);
-                    if (urlParams.has('roomId')) {
-                        this.roomId = urlParams.get('roomId');
+                    const urlParams = new URLSearchParams(window.location.search); //
+                    if (urlParams.has('roomId')) { //
+                        this.roomId = urlParams.get('roomId'); //
                     }
+                    if (urlParams.has('email')) { // Pre-fill email if in URL (e.g. from admin_join redirect)
+                        this.email = urlParams.get('email');
+                    }
+
                      // Clear any admin-specific localStorage items if a player is joining
-                    localStorage.removeItem('adminName'); // Example, if admin also uses localStorage
+                    localStorage.removeItem('adminName'); 
+                    localStorage.removeItem('firebaseAdminUserId');
+                    localStorage.removeItem('firebaseAdminUserEmail');
+
 
                     // Attempt to complete sign-in if a link is in the URL
-                    if (auth.isSignInWithEmailLink(window.location.href)) {
-                        this.isSigningIn = true;
-                        this.isLoading = true;
-                        this.message = 'Completing sign-in... Please wait.';
-                        this.messageType = 'info';
-                        let emailForSignIn = window.localStorage.getItem('emailForSignIn');
+                    if (auth.isSignInWithEmailLink(window.location.href)) { //
+                        this.isSigningIn = true; //
+                        this.isLoading = true; //
+                        this.message = 'Completing sign-in... Please wait.'; //
+                        this.messageType = 'info'; //
+                        let emailForSignIn = window.localStorage.getItem('emailForSignIn'); //
 
-                        if (!emailForSignIn) {
-                            // This can happen if the user opens the link on a different browser/device.
-                            // It's more secure to prompt again. Firebase docs recommend this.
-                            // However, prompting can be disruptive if the user is on the same device.
-                            // For simplicity here, if email is not in localStorage, we'll show an error.
-                            // In a production app, you might guide the user to re-enter their email on this page.
-                            this.message = "Your email for sign-in was not found. Please try sending the link again from this browser.";
-                            this.messageType = 'error';
-                            this.isLoading = false;
-                            this.isSigningIn = false;
+                        if (!emailForSignIn) { //
+                            // Prompt for email if not in localStorage (e.g. link opened in different browser)
+                            emailForSignIn = window.prompt('Please provide your email to complete the sign-in:');
+                        }
+                        
+                        if (!emailForSignIn) { //
+                            this.message = "Your email for sign-in was not found or provided. Please try sending the link again from this browser, or re-enter your email if prompted."; //
+                            this.messageType = 'error'; //
+                            this.isLoading = false; //
+                            this.isSigningIn = false; //
                             if (window.history && window.history.replaceState) { // Clean URL
-                                window.history.replaceState(null, '', window.location.pathname);
+                                window.history.replaceState(null, '', window.location.pathname); //
                             }
-                            return;
+                            return; //
                         }
 
-                        auth.signInWithEmailLink(emailForSignIn, window.location.href)
+                        auth.signInWithEmailLink(emailForSignIn, window.location.href) //
                             .then((result) => {
-                                window.localStorage.removeItem('emailForSignIn');
-                                this.currentUser = result.user;
-                                this.email = result.user.email; // Pre-fill email
-                                this.message = `Successfully signed in as ${result.user.email}! Please enter your player name and Room ID to join.`;
-                                this.messageType = 'success';
-                                if (window.history && window.history.replaceState) {
-                                    window.history.replaceState(null, '', window.location.pathname);
+                                window.localStorage.removeItem('emailForSignIn'); //
+                                this.currentUser = result.user; //
+                                this.email = result.user.email; // Pre-fill email from authenticated user
+                                this.message = `Successfully signed in as ${result.user.email}! Please enter your player name and Room ID to join.`; //
+                                this.messageType = 'success'; //
+                                if (window.history && window.history.replaceState) { // Clean URL of auth params
+                                    window.history.replaceState(null, '', window.location.pathname + (this.roomId ? `?roomId=${this.roomId}` : '')); // Preserve roomId if present
                                 }
                             })
                             .catch((error) => {
-                                console.error("Error signing in with email link:", error);
-                                this.message = `Error signing in: ${error.message}. The link might be invalid, expired, or the email might not match. Please try sending a new link.`;
-                                this.messageType = 'error';
-                                window.localStorage.removeItem('emailForSignIn');
+                                console.error("Error signing in with email link:", error); //
+                                this.message = `Error signing in: ${error.message}. The link might be invalid, expired, or the email might not match. Please try sending a new link.`; //
+                                this.messageType = 'error'; //
+                                window.localStorage.removeItem('emailForSignIn'); //
                                 if (window.history && window.history.replaceState) { // Clean URL
-                                    window.history.replaceState(null, '', window.location.pathname);
+                                    window.history.replaceState(null, '', window.location.pathname); //
                                 }
                             })
                             .finally(() => {
-                                this.isLoading = false;
-                                this.isSigningIn = false;
-                                this.emailSent = false; // Reset emailSent state
+                                this.isLoading = false; //
+                                this.isSigningIn = false; //
+                                this.emailSent = false; // Reset emailSent state as sign-in process is complete or failed
                             });
                     } else {
                         // If not a sign-in link, check current auth state (e.g., if user is already signed in)
-                        auth.onAuthStateChanged((user) => {
-                            if (this.isSigningIn) return; // Don't interfere if sign-in link processing is happening
+                        auth.onAuthStateChanged((user) => { //
+                            if (this.isSigningIn) return; // Don't interfere if sign-in link processing is ongoing
 
-                            if (user) {
-                                this.currentUser = user;
-                                this.email = user.email;
-                                // No automatic message here, let user proceed or UI show "Logged in as..."
+                            if (user) { //
+                                this.currentUser = user; //
+                                this.email = user.email; //
                             } else {
-                                this.currentUser = null;
+                                this.currentUser = null; //
                             }
                         });
                     }
                 },
 
                 setTheme(themeName, event = null, closeDropdown = true) {
-                    document.documentElement.setAttribute('data-theme', themeName);
-                    localStorage.setItem('theme', themeName);
-                    if (closeDropdown && event && event.target) {
-                        const anchorElement = event.target;
-                        const dropdownRoot = anchorElement.closest('.dropdown');
-                        const dropdownTriggerLabel = dropdownRoot?.querySelector('label[tabindex="0"]');
-                        setTimeout(() => {
-                            if (document.activeElement && dropdownRoot && dropdownRoot.contains(document.activeElement)) {
-                                if (typeof document.activeElement.blur === 'function') document.activeElement.blur();
+                    document.documentElement.setAttribute('data-theme', themeName); //
+                    localStorage.setItem('theme', themeName); //
+                    if (closeDropdown && event && event.target) { //
+                        const anchorElement = event.target; //
+                        const dropdownRoot = anchorElement.closest('.dropdown'); //
+                        const dropdownTriggerLabel = dropdownRoot?.querySelector('label[tabindex="0"]'); //
+                        setTimeout(() => { //
+                            if (document.activeElement && dropdownRoot && dropdownRoot.contains(document.activeElement)) { //
+                                if (typeof document.activeElement.blur === 'function') document.activeElement.blur(); //
                             }
-                            if (dropdownTriggerLabel && typeof dropdownTriggerLabel.blur === 'function') dropdownTriggerLabel.blur();
+                            if (dropdownTriggerLabel && typeof dropdownTriggerLabel.blur === 'function') dropdownTriggerLabel.blur(); //
                         }, 0);
                     }
                 },
 
                 validateInput(fieldsToValidate = ['email', 'playerName', 'roomId']) {
-                    this.errors = { email: '', playerName: '', roomId: '' };
-                    let isValid = true;
+                    this.errors = { email: '', playerName: '', roomId: '' }; // Reset errors
+                    let isValid = true; //
 
-                    if (fieldsToValidate.includes('email')) {
-                        if (!this.email.trim()) {
-                            this.errors.email = 'Email is required.'; isValid = false;
-                        } else if (!/^\S+@\S+\.\S+$/.test(this.email.trim())) {
-                            this.errors.email = 'Please enter a valid email address.'; isValid = false;
+                    if (fieldsToValidate.includes('email')) { //
+                        if (!this.email.trim()) { //
+                            this.errors.email = 'Email is required.'; isValid = false; //
+                        } else if (!/^\S+@\S+\.\S+$/.test(this.email.trim())) { //
+                            this.errors.email = 'Please enter a valid email address.'; isValid = false; //
                         }
                     }
-                    if (fieldsToValidate.includes('playerName') && !this.playerName.trim()) {
-                        this.errors.playerName = 'Player name is required.'; isValid = false;
+                    if (fieldsToValidate.includes('playerName') && !this.playerName.trim()) { //
+                        this.errors.playerName = 'Player name is required.'; isValid = false; //
                     }
-                    if (fieldsToValidate.includes('roomId') && !this.roomId.trim()) {
-                        this.errors.roomId = 'Room ID is required.'; isValid = false;
+                    if (fieldsToValidate.includes('roomId') && !this.roomId.trim()) { //
+                        this.errors.roomId = 'Room ID is required.'; isValid = false; //
                     }
-                    return isValid;
+                    return isValid; //
                 },
 
                 sendSignInLink() {
-                    if (!this.validateInput(['email'])) { return; }
-                    this.isLoading = true;
-                    this.message = ''; this.messageType = '';
+                    if (!this.validateInput(['email'])) { return; } //
+                    this.isLoading = true; //
+                    this.message = ''; this.messageType = ''; // Reset message
 
-                    const actionCodeSettings = {
-                        url: window.location.href.split('?')[0], // Use base URL of current page for redirect
-                        handleCodeInApp: true,
+                    const actionCodeSettings = { //
+                        url: window.location.href.split('?')[0] + (this.roomId ? `?roomId=${this.roomId}` : ''), // Preserve roomId in redirect
+                        handleCodeInApp: true, //
                     };
 
-                    auth.sendSignInLinkToEmail(this.email, actionCodeSettings)
+                    auth.sendSignInLinkToEmail(this.email, actionCodeSettings) //
                         .then(() => {
-                            window.localStorage.setItem('emailForSignIn', this.email);
-                            this.emailSent = true;
-                            this.message = 'Sign-in link sent to your email! Please check your inbox (and spam folder). Click the link to return here and sign in.';
-                            this.messageType = 'success';
+                            window.localStorage.setItem('emailForSignIn', this.email); // Store email for sign-in completion
+                            this.emailSent = true; //
+                            this.message = 'Sign-in link sent to your email! Please check your inbox (and spam folder). Click the link to return here and sign in.'; //
+                            this.messageType = 'success'; //
                         })
                         .catch((error) => {
-                            console.error("Error sending sign-in link:", error);
-                            this.message = `Error sending link: ${error.code} - ${error.message}`;
-                            this.messageType = 'error';
+                            console.error("Error sending sign-in link:", error); //
+                            this.message = `Error sending link: ${error.code} - ${error.message}`; //
+                            this.messageType = 'error'; //
                         })
                         .finally(() => {
-                            this.isLoading = false;
+                            this.isLoading = false; //
                         });
                 },
 
                 proceedToGame() {
-                    this.message = '';
-                    if (!this.currentUser) {
-                        this.message = 'You must be signed in to join a game. Please use the link sent to your email, or send a new one.';
-                        this.messageType = 'error';
-                        return;
+                    this.message = ''; // Reset message
+                    if (!this.currentUser) { //
+                        this.message = 'You must be signed in to join a game. Please use the link sent to your email, or send a new one.'; //
+                        this.messageType = 'error'; //
+                        return; //
                     }
-                    if (!this.validateInput(['playerName', 'roomId'])) { return; }
+                    if (!this.validateInput(['playerName', 'roomId'])) { return; } //
 
-                    this.isLoading = true;
-                    this.message = `Setting up to join room ${this.roomId} as ${this.playerName}...`;
-                    this.messageType = 'info';
+                    this.isLoading = true; //
+                    this.message = `Setting up to join room ${this.roomId} as ${this.playerName}...`; //
+                    this.messageType = 'info'; //
 
-                    localStorage.setItem('playerName', this.playerName);
-                    localStorage.setItem('roomId', this.roomId);
-                    localStorage.setItem('firebaseUserId', this.currentUser.uid);
-                    localStorage.setItem('firebaseUserEmail', this.currentUser.email);
+                    localStorage.setItem('playerName', this.playerName); //
+                    localStorage.setItem('roomId', this.roomId); //
+                    localStorage.setItem('firebaseUserId', this.currentUser.uid); // Player's Firebase UID
+                    localStorage.setItem('firebaseUserEmail', this.currentUser.email); // Player's Firebase Email
 
-                    // For now, we don't handle tickets on this page for the premium version.
-                    // player_game.html will be responsible for fetching/receiving tickets
-                    // from the server (Firestore/Cloud Functions) after authenticating.
-                    // So, we remove mock ticket generation from here.
-                    localStorage.removeItem('playerTicket'); // Remove old mock ticket if any
+                    localStorage.removeItem('playerTicket'); // Remove any old mock ticket if it exists
 
-                    setTimeout(() => {
-                        window.location.href = `player_game.html?playerName=${encodeURIComponent(this.playerName)}&roomId=${encodeURIComponent(this.roomId)}`;
-                        // Note: playerName in URL is for display convenience; firebaseUserId will be the true identifier.
-                        this.isLoading = false;
-                    }, 1500);
-                },
-
-                // Removed mock ticket helper functions (getRandomNum, ensureFiveNumbersPerRow, finalizeTicketNumbers)
-                // as ticket generation will move server-side for the premium version.
+                    setTimeout(() => { //
+                        // Pass parameters via URL for player_game.html to pick up and verify with localStorage
+                        window.location.href = `player_game.html?playerName=${encodeURIComponent(this.playerName)}&roomId=${encodeURIComponent(this.roomId)}`; //
+                        this.isLoading = false; //
+                    }, 1500); // Short delay for user to read message
+                }
             }
         }
     </script>
