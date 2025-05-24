@@ -1,9 +1,24 @@
 {
-  "name": "tambola-functions",
+  "name": "tambola-game-functions",
+  "description": "Cloud Functions for the Tambola Game",
+  "scripts": {
+    "serve": "echo 'Run firebase emulators:start --only functions locally (if installed)'",
+    "shell": "echo 'Run firebase functions:shell locally (if installed)'",
+    "start": "npm run shell",
+    "deploy": "echo 'Use GitHub Actions for deployment'",
+    "logs": "echo 'Run firebase functions:log locally (if installed)'"
+  },
+  "engines": {
+    "node": "18"
+  },
   "main": "index.js",
-  "engines": { "node": "18" },
   "dependencies": {
-    "firebase-admin": "^11.10.1",
-    "firebase-functions": "^4.4.1"
-  }
+    "firebase-admin": "^12.0.0",  // For interacting with Firebase services (Firestore, Auth) from the backend
+    "firebase-functions": "^5.0.0" // Core Firebase Functions SDK
+    // Add other dependencies here as needed, e.g., for QR code generation if done backend
+  },
+  "devDependencies": {
+    // You might add linters or other dev tools here if you were working locally
+  },
+  "private": true
 }
