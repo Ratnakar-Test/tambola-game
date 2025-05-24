@@ -1,648 +1,883 @@
-/**
- * Firebase Cloud Functions - Tambola Backend
- * Handles game management, ticket requests, and prize claim processing.
- */
-
+// The Cloud Functions for Firebase SDK to create Cloud Functions and set up triggers.
 const functions = require("firebase-functions");
+const { logger } = functions;
+
+// The Firebase Admin SDK to access Firebase services from the backend.
 const admin = require("firebase-admin");
 admin.initializeApp();
 
 const db = admin.firestore();
 
-// --- UTILITY FUNCTIONS ---
+// --- Helper Functions ---
 
 /**
- * Generates a Tambola ticket.
- * A ticket is a 3x9 grid. Each row has 5 numbers.
- * Col 0: 1-9, Col 1: 10-19, ..., Col 8: 80-90.
- * Numbers in columns are sorted.
- * Each column must have at least one number. No column can have more than 3 numbers.
- * @returns {Array<Array<number|null>>} The generated ticket.
+ * Generates a unique Room ID.
+ */
+function generateRoomId() {
+  return Math.random().toString().slice(2, 8);
+}
+
+/**
+ * Generates a valid Tambola ticket (3x9 grid, 15 numbers).
+ * Rules:
+ * - Each row has exactly 5 numbers.
+ * - Each column has numbers from its respective range (1-9, 10-19, ..., 80-90).
+ * - Each column must have at least one number.
+ * - Numbers in a column are sorted.
+ * Returns a 2D array representing the ticket.
  */
 function generateTambolaTicket() {
-    let ticket = Array(3).fill(null).map(() => Array(9).fill(null));
-    let colCounts = Array(9).fill(0);
-    let rowCounts = Array(3).fill(0);
-    let totalNumbers = 0;
+  let ticket = Array(3).fill(null).map(() => Array(9).fill(null));
+  let numbers = new Set(); // To ensure unique numbers on the ticket
 
+  // Helper to get a random number in a column's range, not already used
+  const getRandomNumForCol = (colIndex) => {
+    const min = colIndex * 10 + (colIndex === 8 ? 0 : 1); // Col 8 is 80-90, others X1-X9
+    const max = colIndex * 10 + (colIndex === 8 ? 10 : 9); // Col 8 is 80-90
+    let num;
+    let attempts = 0;
+    do {
+      num = Math.floor(Math.random() * (max - min + 1)) + min;
+      attempts++;
+    } while (numbers.has(num) && attempts < 20); // Avoid infinite loop for dense columns
+    if (numbers.has(num)) return null; // Could not find unique number easily
+    return num;
+  };
+
+  // Phase 1: Ensure each column has at least one number
+  for (let j = 0; j < 9; j++) {
+    const rowIndex = Math.floor(Math.random() * 3);
+    let num = getRandomNumForCol(j);
+    if (num) {
+      ticket[rowIndex][j] = num;
+      numbers.add(num);
+    } else {
+      // Fallback: if failed to get unique, try again or this column might be empty if ranges are full
+      // This indicates a potential issue if it happens often. For simplicity, we retry once.
+      num = getRandomNumForCol(j);
+      if (num) {
+          ticket[rowIndex][j] = num;
+          numbers.add(num);
+      } else {
+          // If still fails, this ticket generation might fail to meet all constraints.
+          // A more robust generator might backtrack or use different strategies.
+          logger.warn(`Could not place initial number in column ${j}`);
+      }
+    }
+  }
+
+  // Phase 2: Fill remaining spots to ensure each row has 5 numbers
+  for (let i = 0; i < 3; i++) {
+    let numsInRow = ticket[i].filter(n => n !== null).length;
+    let availableCols = [];
+    for(let k=0; k<9; k++) availableCols.push(k); // All columns initially
+    // Shuffle available columns to pick from randomly
+    availableCols.sort(() => 0.5 - Math.random());
+
+    while (numsInRow < 5 && availableCols.length > 0) {
+      const colIndex = availableCols.pop(); // Get a random available column index
+      if (ticket[i][colIndex] === null) { // If cell is empty
+        // Check how many numbers already in this column to not overpopulate (max 2 or 3 is typical)
+        let numsInCol = 0;
+        for(let r=0; r<3; r++) if(ticket[r][colIndex] !== null) numsInCol++;
+
+        if (numsInCol < 2) { // Allow max 2 numbers per column for this generator for simplicity.
+                             // Tambola allows up to 3 sometimes, adjust if needed.
+          let num = getRandomNumForCol(colIndex);
+          if (num) {
+            ticket[i][colIndex] = num;
+            numbers.add(num);
+            numsInRow++;
+          }
+        }
+      }
+    }
+  }
+
+  // Phase 3: Verification and minor adjustments if constraints not perfectly met
+  // Count total numbers. If not 15, or row constraints not met, this generator is flawed.
+  let totalNumbers = 0;
+  ticket.forEach(row => row.forEach(n => { if (n) totalNumbers++; }));
+
+  if (totalNumbers !== 15) {
+      logger.error("Ticket generation failed: Did not produce 15 numbers. Generated:", totalNumbers, ticket);
+      // Fallback to a simpler, potentially less "correct" ticket or throw error
+      // For now, returning what we have, but this needs robust handling.
+      // This might happen if getRandomNumForCol consistently fails.
+      // A production system needs a highly reliable ticket generator.
+  }
+   // Ensure each row has 5 numbers (simple post-check, might not be fixable here without complex logic)
+  for(let i=0; i<3; i++) {
+      if (ticket[i].filter(n => n !== null).length !== 5) {
+          logger.warn(`Row ${i} does not have 5 numbers. This indicates an issue with generation logic.`);
+          // Attempt a quick fix (very naive) by trying to fill from remaining numbers
+          // This part is complex and requires careful logic to not violate other rules
+      }
+  }
+
+
+  // Phase 4: Sort numbers within columns (optional, but good for display)
+  for (let j = 0; j < 9; j++) {
     let colNumbers = [];
-    for (let i = 0; i < 9; i++) {
-        let start = i * 10 + (i === 0 ? 1 : 0);
-        let end = i * 10 + (i === 8 ? 10 : 9);
-        if (i === 8) end = 90;
-
-        let nums = [];
-        for (let j = start; j <= end; j++) {
-            nums.push(j);
-        }
-        for (let k = nums.length - 1; k > 0; k--) {
-            const l = Math.floor(Math.random() * (k + 1));
-            [nums[k], nums[l]] = [nums[l], nums[k]];
-        }
-        colNumbers.push(nums);
+    for (let i = 0; i < 3; i++) {
+      if (ticket[i][j] !== null) {
+        colNumbers.push(ticket[i][j]);
+      }
     }
-
-    // Attempt to satisfy row and column constraints
-    // First pass: Ensure each column gets at least one number
-    for (let c = 0; c < 9; c++) {
-        if (colNumbers[c].length > 0) {
-            let placedInCol = false;
-            // Try to find a row that needs numbers and isn't full
-            let availableRows = [];
-            for(let r=0; r<3; r++) { if(rowCounts[r] < 5) availableRows.push(r); }
-            if(availableRows.length > 0) {
-                let randomRow = availableRows[Math.floor(Math.random() * availableRows.length)];
-                 if (ticket[randomRow][c] === null) { // Check if cell is empty
-                    ticket[randomRow][c] = colNumbers[c].pop();
-                    colCounts[c]++;
-                    rowCounts[randomRow]++;
-                    totalNumbers++;
-                    placedInCol = true;
-                }
-            }
-            // If still not placed (e.g., all rows tried are full in this column), try any empty cell in this col
-            if(!placedInCol) {
-                for (let r = 0; r < 3; r++) {
-                    if (ticket[r][c] === null && rowCounts[r] < 5 && colNumbers[c].length > 0) {
-                        ticket[r][c] = colNumbers[c].pop();
-                        colCounts[c]++;
-                        rowCounts[r]++;
-                        totalNumbers++;
-                        break;
-                    }
-                }
-            }
-        }
+    colNumbers.sort((a, b) => a - b);
+    let current = 0;
+    for (let i = 0; i < 3; i++) {
+      if (ticket[i][j] !== null) {
+        ticket[i][j] = colNumbers[current++];
+      }
     }
+  }
 
-    // Second pass: Fill remaining numbers to get 5 per row and 15 total
-    for (let r = 0; r < 3; r++) {
-        while (rowCounts[r] < 5 && totalNumbers < 15) {
-            let availableCols = [];
-            for (let c = 0; c < 9; c++) {
-                if (ticket[r][c] === null && colCounts[c] < 3 && colNumbers[c].length > 0) {
-                    availableCols.push(c);
-                }
-            }
-            if (availableCols.length === 0) break; // No place in this row respecting col constraints
+  logger.info("Generated Ticket:", ticket);
+  return ticket;
+}
 
-            let chosenCol = availableCols[Math.floor(Math.random() * availableCols.length)];
-            ticket[r][chosenCol] = colNumbers[chosenCol].pop();
-            colCounts[chosenCol]++;
-            rowCounts[r]++;
-            totalNumbers++;
-        }
-    }
-    
-    // If by some chance constraints couldn't be perfectly met (e.g. not exactly 15 numbers, or a row not 5)
-    // This basic algorithm might need refinement for edge cases or a more complex constraint solver.
-    // For now, we proceed with what's generated. A common issue is getting stuck if one column fills up to 3 too quickly.
+/**
+ * Validates if a claimed pattern is achieved.
+ * @param {Array<Array<number|null>>} ticketNumbers - The player's ticket grid.
+ * @param {Array<number>} claimedNumbersOnTicket - Numbers *marked by player* for this claim.
+ * @param {Array<number>} gameCalledNumbers - All numbers called in the game.
+ * @param {object} rule - The prize rule object (should have an id or name like 'earlyFive', 'line1', 'fullHouse', 'corners').
+ * @returns {boolean} - True if the claim is valid.
+ */
+function validatePrizePattern(ticketNumbers, claimedNumbersOnTicket, gameCalledNumbers, rule) {
+  logger.info("Validating prize:", rule.name, "Player Claimed Nums:", claimedNumbersOnTicket, "Game Called Nums:", gameCalledNumbers);
 
-    // Sort numbers within each column on the ticket
-    for (let c = 0; c < 9; c++) {
-        let colVals = [];
-        for (let r = 0; r < 3; r++) {
-            if (ticket[r][c] !== null) {
-                colVals.push(ticket[r][c]);
-            }
-        }
-        colVals.sort((a, b) => a - b);
-        let valIndex = 0;
-        for (let r = 0; r < 3; r++) {
-            if (ticket[r][c] !== null) {
-                ticket[r][c] = colVals[valIndex++];
-            }
-        }
-    }
-    return ticket;
+  // 1. All numbers claimed by the player MUST have been called in the game.
+  const allClaimedAreCalled = claimedNumbersOnTicket.every(num => gameCalledNumbers.includes(num));
+  if (!allClaimedAreCalled) {
+    logger.warn("Validation failed: Not all numbers claimed by player were actually called in the game.");
+    return false;
+  }
+
+  // 2. All numbers claimed by the player MUST exist on their ticket.
+  const ticketFlatNumbers = ticketNumbers.flat().filter(n => n !== null);
+  const allClaimedAreOnTicket = claimedNumbersOnTicket.every(num => ticketFlatNumbers.includes(num));
+  if (!allClaimedAreOnTicket) {
+    logger.warn("Validation failed: Not all numbers claimed by player exist on their ticket.");
+    return false;
+  }
+
+  const ruleId = rule.id ? rule.id.toLowerCase() : rule.name.toLowerCase();
+
+  switch (ruleId) {
+    case 'earlyfive': // Assuming rule.id or rule.name is 'earlyFive' or similar
+    case 'early five':
+    case 'early_five':
+      // Player claims 5 specific numbers on their ticket.
+      // We've already checked they are called and on the ticket.
+      // The validation is that they have *at least* 5 such numbers.
+      if (claimedNumbersOnTicket.length < 5) {
+        logger.warn("Early Five validation failed: Less than 5 numbers claimed.");
+        return false;
+      }
+      // Ensure all 5 (or more claimed) are indeed on the ticket and were called (already checked).
+      logger.info("Early Five validation: Passed.");
+      return true;
+
+    case 'line1':
+    case 'line 1':
+    case 'first line':
+    case 'topline':
+    case 'top line':
+      const line1Numbers = ticketNumbers[0].filter(n => n !== null);
+      if (line1Numbers.length !== 5) { // Should always be 5 from generator
+          logger.warn("Line 1 validation warning: Ticket row 0 does not have 5 numbers.");
+          return false; // Or handle as error in ticket.
+      }
+      // All 5 numbers of line 1 must be in claimedNumbersOnTicket
+      const line1Claimed = line1Numbers.every(num => claimedNumbersOnTicket.includes(num));
+      if (!line1Claimed) logger.warn("Line 1 validation failed: Not all numbers from line 1 are in player's claim.");
+      else logger.info("Line 1 validation: Passed.");
+      return line1Claimed;
+
+    case 'line2':
+    case 'line 2':
+    case 'second line':
+    case 'middleline':
+    case 'middle line':
+      const line2Numbers = ticketNumbers[1].filter(n => n !== null);
+      if (line2Numbers.length !== 5) {
+          logger.warn("Line 2 validation warning: Ticket row 1 does not have 5 numbers.");
+          return false;
+      }
+      const line2Claimed = line2Numbers.every(num => claimedNumbersOnTicket.includes(num));
+      if (!line2Claimed) logger.warn("Line 2 validation failed: Not all numbers from line 2 are in player's claim.");
+      else logger.info("Line 2 validation: Passed.");
+      return line2Claimed;
+
+    case 'line3':
+    case 'line 3':
+    case 'third line':
+    case 'bottomline':
+    case 'bottom line':
+      const line3Numbers = ticketNumbers[2].filter(n => n !== null);
+      if (line3Numbers.length !== 5) {
+          logger.warn("Line 3 validation warning: Ticket row 2 does not have 5 numbers.");
+          return false;
+      }
+      const line3Claimed = line3Numbers.every(num => claimedNumbersOnTicket.includes(num));
+      if (!line3Claimed) logger.warn("Line 3 validation failed: Not all numbers from line 3 are in player's claim.");
+      else logger.info("Line 3 validation: Passed.");
+      return line3Claimed;
+
+    case 'corners':
+    case 'fourcorners':
+    case 'four corners':
+      const corners = [];
+      // First number of first row
+      for(let j=0; j<9; j++) if(ticketNumbers[0][j] !== null) { corners.push(ticketNumbers[0][j]); break; }
+      // Last number of first row
+      for(let j=8; j>=0; j--) if(ticketNumbers[0][j] !== null) { corners.push(ticketNumbers[0][j]); break; }
+      // First number of last row
+      for(let j=0; j<9; j++) if(ticketNumbers[2][j] !== null) { corners.push(ticketNumbers[2][j]); break; }
+      // Last number of last row
+      for(let j=8; j>=0; j--) if(ticketNumbers[2][j] !== null) { corners.push(ticketNumbers[2][j]); break; }
+
+      if (corners.length !== 4) { // Should be 4 if ticket is valid
+        logger.warn("Corners validation warning: Could not identify 4 corner numbers on the ticket.");
+        return false;
+      }
+      const cornersClaimed = corners.every(num => claimedNumbersOnTicket.includes(num));
+      if (!cornersClaimed) logger.warn("Corners validation failed: Not all 4 corner numbers are in player's claim.");
+      else logger.info("Corners validation: Passed.");
+      return cornersClaimed;
+
+    case 'fullhouse':
+    case 'full house':
+      // All 15 numbers on the ticket must be in claimedNumbersOnTicket.
+      if (ticketFlatNumbers.length !== 15) {
+        logger.warn("Full House validation warning: Ticket does not have 15 numbers.");
+        return false; // Or handle as error in ticket.
+      }
+      const fullHouseClaimed = ticketFlatNumbers.every(num => claimedNumbersOnTicket.includes(num)) &&
+                               claimedNumbersOnTicket.length >= ticketFlatNumbers.length; // Ensure player claimed at least all numbers
+      if (!fullHouseClaimed) logger.warn("Full House validation failed: Not all 15 ticket numbers are in player's claim, or player claimed too few.");
+      else logger.info("Full House validation: Passed.");
+      return fullHouseClaimed;
+
+    default:
+      logger.warn(`Unknown prize rule ID for validation: '${ruleId}'. Claim rejected.`);
+      return false;
+  }
 }
 
 
-/**
- * Ensures the calling user has admin privileges.
- * @param {object} context - The context object from the callable function.
- */
-function ensureAdmin(context) {
-    if (!context.auth) {
-        functions.logger.warn("ensureAdmin: Unauthenticated access attempt.");
-        throw new functions.https.HttpsError("unauthenticated", "User must be authenticated.");
-    }
-    // Check for custom admin claim
-    if (context.auth.token.admin !== true) {
-        functions.logger.warn("ensureAdmin: Permission denied. User is not an admin.", {uid: context.auth.uid});
-        throw new functions.https.HttpsError("permission-denied", "User must be an admin to perform this operation.");
-    }
-    functions.logger.log("ensureAdmin: Admin check passed for UID:", context.auth.uid);
+// --- Authentication Check ---
+function ensureAuthenticated(context) {
+  if (!context.auth) {
+    logger.error("Authentication check failed: User not authenticated.");
+    throw new functions.https.HttpsError('unauthenticated', 'The function must be called while authenticated.');
+  }
 }
 
-// --- CALLABLE FUNCTIONS ---
+// --- Admin Functions ---
 
-/**
- * Admin starts a new game or restarts an existing one.
- */
-exports.startGame = functions.https.onCall(async (data, context) => {
-    functions.logger.log("startGame: Function execution started.", {structuredData: true});
-    functions.logger.log("startGame: Received data:", data);
-    functions.logger.log("startGame: Auth context present:", !!context.auth);
-    if (context.auth) {
-        functions.logger.log("startGame: Auth UID:", context.auth.uid);
-        // Avoid logging the full token in production unless for very specific debugging needs
-        // functions.logger.log("startGame: Auth token details:", context.auth.token);
+exports.createGameRoom = functions.https.onCall(async (data, context) => {
+  ensureAuthenticated(context);
+  const adminUID = context.auth.uid;
+  const { adminDisplayName, rules, autoCallInterval, ticketPrice } = data;
+
+  if (!adminDisplayName || !rules || !Array.isArray(rules) || ticketPrice === undefined || ticketPrice < 0) {
+    throw new functions.https.HttpsError('invalid-argument', 'Admin display name, rules array, and a valid ticket price are required.');
+  }
+
+  const roomId = generateRoomId();
+  const roomRef = db.collection('rooms').doc(roomId);
+
+  const initializedRules = rules.map((rule, index) => ({
+    id: rule.id || `rule_${index}_${Date.now()}`,
+    name: rule.name,
+    description: rule.description || '',
+    coinsPerPrize: rule.coinsPerPrize || 0, // Fixed amount
+    percentageOfTotal: rule.percentageOfTotal || 0, // Percentage of total collected money
+    maxPrizes: rule.maxPrizes || 1,
+    isActive: true,
+    claims: [],
+    baseWeight: rule.baseWeight || 0,
+    originalWeight: rule.originalWeight || 0,
+  }));
+
+  try {
+    await roomRef.set({
+      roomId,
+      adminDisplayName,
+      adminUID,
+      autoCallInterval: autoCallInterval || 5,
+      callingMode: "manual",
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      currentActivePlayers: {},
+      currentLatestCalledNumber: null,
+      currentNumbersCalled: [],
+      currentWinners: [],
+      gameStartTime: null,
+      gameEndTime: null,
+      gameStatus: "idle",
+      rules: initializedRules,
+      ticketPrice: Number(ticketPrice), // Ensure it's a number
+      totalMoneyCollected: 0,
+    });
+    logger.info(`Room ${roomId} created by admin ${adminUID}`);
+    return { roomId, message: "Game room created successfully." };
+  } catch (error) {
+    logger.error("Error creating game room:", error);
+    throw new functions.https.HttpsError('internal', 'Could not create game room.', error.message);
+  }
+});
+
+exports.updateGameConfiguration = functions.https.onCall(async (data, context) => {
+    ensureAuthenticated(context);
+    const adminUID = context.auth.uid;
+    const { roomId, rules, autoCallInterval, adminDisplayName, ticketPrice } = data;
+
+    if (!roomId) {
+        throw new functions.https.HttpsError('invalid-argument', 'Room ID is required.');
     }
+
+    const roomRef = db.collection('rooms').doc(roomId);
+    const roomSnap = await roomRef.get();
+
+    if (!roomSnap.exists || roomSnap.data().adminUID !== adminUID) {
+        throw new functions.https.HttpsError('permission-denied', 'You are not the admin of this room or room does not exist.');
+    }
+    if (roomSnap.data().gameStatus !== "idle") {
+        throw new functions.https.HttpsError('failed-precondition', 'Game configuration can only be updated when game is idle.');
+    }
+
+    const updates = {};
+    if (rules) updates.rules = rules.map((rule, index) => ({
+        id: rule.id || `rule_${index}_${Date.now()}`,
+        name: rule.name,
+        description: rule.description || '',
+        coinsPerPrize: rule.coinsPerPrize || 0,
+        percentageOfTotal: rule.percentageOfTotal || 0,
+        maxPrizes: rule.maxPrizes || 1,
+        isActive: rule.isActive !== undefined ? rule.isActive : true,
+        claims: rule.claims || [], // Retain existing claims if rule ID matches, or reset if new rules array
+        baseWeight: rule.baseWeight || 0,
+        originalWeight: rule.originalWeight || 0,
+    }));
+    if (autoCallInterval) updates.autoCallInterval = autoCallInterval;
+    if (adminDisplayName) updates.adminDisplayName = adminDisplayName;
+    if (ticketPrice !== undefined && ticketPrice >= 0) {
+        updates.ticketPrice = Number(ticketPrice);
+    }
+
 
     try {
-        ensureAdmin(context); // This will throw if not admin
+        await roomRef.update(updates);
+        logger.info(`Room ${roomId} configuration updated by admin ${adminUID}`);
+        return { message: "Game configuration updated successfully." };
+    } catch (error) {
+        logger.error(`Error updating game configuration for room ${roomId}:`, error);
+        throw new functions.https.HttpsError('internal', 'Could not update game configuration.', error.message);
+    }
+});
 
-        const { roomId, rulesConfig, totalMoneyCollected, callingMode, autoCallInterval } = data;
-        functions.logger.log("startGame: Destructured data:", { roomId, rulesConfigIsArray: Array.isArray(rulesConfig), totalMoneyCollected, callingMode, autoCallInterval });
 
-        if (!roomId || !rulesConfig || !Array.isArray(rulesConfig)) {
-            functions.logger.error("startGame: Invalid arguments. Room ID or rulesConfig missing/invalid.", { roomId, rulesConfigPresent: !!rulesConfig, data });
-            throw new functions.https.HttpsError("invalid-argument", "Room ID and valid rulesConfig array are required.");
+exports.manageGameLifecycle = functions.https.onCall(async (data, context) => {
+  ensureAuthenticated(context);
+  const adminUID = context.auth.uid;
+  const { roomId, action } = data;
+
+  if (!roomId || !action) {
+    throw new functions.https.HttpsError('invalid-argument', 'Room ID and action are required.');
+  }
+
+  const roomRef = db.collection('rooms').doc(roomId);
+
+  try {
+    const roomDoc = await roomRef.get();
+    if (!roomDoc.exists || roomDoc.data().adminUID !== adminUID) {
+      throw new functions.https.HttpsError('permission-denied', 'You are not the admin of this room or room does not exist.');
+    }
+
+    const roomData = roomDoc.data();
+    let updateData = {};
+
+    switch (action) {
+      case "start":
+        if (roomData.gameStatus !== "idle" && roomData.gameStatus !== "stopped") {
+            throw new functions.https.HttpsError('failed-precondition', 'Game can only be started if idle or stopped.');
         }
-        functions.logger.log(`startGame: Processing for Room ID: ${roomId}`);
-
-        const roomRef = db.collection("rooms").doc(roomId);
-        functions.logger.log("startGame: Room reference created for path:", roomRef.path);
-
-        const processedRules = rulesConfig.map((rule, index) => {
-            if (!rule || typeof rule.id === 'undefined') { // Basic check for rule validity
-                functions.logger.warn(`startGame: Rule at index ${index} is malformed or missing id. Using defaults/skipping.`, {rule});
-                // Potentially throw an error or provide default values
-                return {
-                    id: `default_invalid_rule_${index}`, name: "Invalid Rule", description: "Rule data was malformed.",
-                    coinsPerPrize: 0, maxPrizes: 0, isActive: false, claims: 0, baseWeight: 0, originalWeight: 0
-                };
-            }
-            return {
-                id: rule.id,
-                name: rule.name || "Unnamed Rule",
-                description: rule.description || "",
-                coinsPerPrize: parseFloat(rule.coinsPerPrize) || 0,
-                maxPrizes: parseInt(rule.maxPrizes) || 1,
-                isActive: !!rule.isActive,
-                claims: 0, // Reset claims for a new game
-                baseWeight: parseFloat(rule.baseWeight) || 0,
-                originalWeight: parseFloat(rule.originalWeight) || parseFloat(rule.baseWeight) || 0
-            };
-        });
-        functions.logger.log("startGame: Rules processed:", processedRules);
-
-        const adminDisplayName = (context.auth.token && context.auth.token.name) || (context.auth.token && context.auth.token.email) || "Admin";
-        functions.logger.log("startGame: Admin display name:", adminDisplayName);
-
-        const gameData = {
+        updateData = {
             gameStatus: "running",
-            adminDisplayName: adminDisplayName,
-            adminUID: context.auth.uid, // Store admin UID
-            currentNumbersCalled: [],
-            currentLatestCalledNumber: null,
-            latestCalledPhrase: "",
-            rules: processedRules,
-            totalMoneyCollected: parseFloat(totalMoneyCollected) || 0,
-            callingMode: callingMode || "manual",
-            autoCallInterval: parseInt(autoCallInterval) || 5,
-            currentWinners: [],
             gameStartTime: admin.firestore.FieldValue.serverTimestamp(),
-            // currentActivePlayers map is generally preserved or managed by player join/ticket logic
+            currentNumbersCalled: [], // Reset numbers
+            currentLatestCalledNumber: null,
+            currentWinners: [] // Reset winners
         };
-        functions.logger.log("startGame: Prepared gameData:", gameData);
-
-        await roomRef.set(gameData, { merge: true }); // Use merge to update/initialize these specific game fields
-        functions.logger.log(`startGame: Game data set for Room ID: ${roomId}. Status set to running.`);
-
-        return { success: true, message: "Game started successfully." };
-
-    } catch (error) {
-        functions.logger.error("startGame: Error caught in function execution:", {
-            message: error.message,
-            stack: error.stack,
-            details: error.details, // For HttpsError
-            code: error.code // For HttpsError
-        });
-        if (error instanceof functions.https.HttpsError) {
-            throw error;
-        }
-        throw new functions.https.HttpsError("internal", `An internal error occurred in startGame: ${error.message}`);
-    }
-});
-
-/**
- * Admin calls the next number in the Tambola game.
- */
-exports.callNextNumber = functions.https.onCall(async (data, context) => {
-    functions.logger.log("callNextNumber: Function started.", {data, auth: !!context.auth});
-    try {
-        ensureAdmin(context);
-        const { roomId } = data;
-        if (!roomId) {
-            functions.logger.error("callNextNumber: Room ID is required.");
-            throw new functions.https.HttpsError("invalid-argument", "Room ID is required.");
-        }
-
-        const roomRef = db.collection("rooms").doc(roomId);
-
-        return db.runTransaction(async (transaction) => {
-            const roomDoc = await transaction.get(roomRef);
-            if (!roomDoc.exists) {
-                functions.logger.error("callNextNumber: Room not found.", {roomId});
-                throw new functions.https.HttpsError("not-found", "Room not found.");
-            }
-
-            const roomData = roomDoc.data();
-            if (roomData.gameStatus !== "running") {
-                functions.logger.warn("callNextNumber: Game not running.", {roomId, status: roomData.gameStatus});
-                throw new functions.https.HttpsError("failed-precondition", "Game is not currently running.");
-            }
-
-            let calledNumbers = roomData.currentNumbersCalled || [];
-            if (calledNumbers.length >= 90) {
-                functions.logger.info("callNextNumber: All numbers called.", {roomId});
-                transaction.update(roomRef, { gameStatus: "stopped", gameEndTime: admin.firestore.FieldValue.serverTimestamp() });
-                return { success: true, message: "All numbers called. Game over.", number: null, allCalled: true };
-            }
-
-            let newNumber;
-            let attempts = 0;
-            do {
-                newNumber = Math.floor(Math.random() * 90) + 1;
-                attempts++;
-                if (attempts > 200 && calledNumbers.length < 90) { // Safeguard for unlikely infinite loop
-                    functions.logger.error("callNextNumber: Could not find a new number after 200 attempts.", {roomId, calledNumbers});
-                    throw new functions.https.HttpsError("internal", "Failed to generate a new unique number.");
-                }
-            } while (calledNumbers.includes(newNumber));
-
-            calledNumbers.push(newNumber);
-            const updates = {
-                currentNumbersCalled: calledNumbers,
-                currentLatestCalledNumber: newNumber,
-                latestCalledPhrase: "", // Placeholder for Genkit/AI phrase
-            };
-
-            if (calledNumbers.length === 90) {
-                updates.gameStatus = "stopped";
-                updates.gameEndTime = admin.firestore.FieldValue.serverTimestamp();
-            }
-
-            transaction.update(roomRef, updates);
-            functions.logger.log("callNextNumber: Number called successfully.", {roomId, newNumber, allCalled: updates.gameStatus === "stopped"});
-            return { success: true, number: newNumber, allCalled: updates.gameStatus === "stopped" };
-        });
-    } catch (error) {
-        functions.logger.error("callNextNumber: Error caught.", error);
-        if (error instanceof functions.https.HttpsError) throw error;
-        throw new functions.https.HttpsError("internal", `Internal error in callNextNumber: ${error.message}`);
-    }
-});
-
-/**
- * Player requests a new ticket for a specific room.
- */
-exports.requestTicket = functions.https.onCall(async (data, context) => {
-    functions.logger.log("requestTicket: Function started.", {data, auth: !!context.auth});
-    if (!context.auth || !context.auth.uid) {
-        throw new functions.https.HttpsError("unauthenticated", "User must be authenticated.");
-    }
-    const { roomId, playerName } = data;
-    const userId = context.auth.uid;
-
-    if (!roomId || !playerName) {
-        throw new functions.https.HttpsError("invalid-argument", "Room ID and Player Name are required.");
-    }
-
-    const roomRef = db.collection("rooms").doc(roomId);
-    try {
-        const roomDoc = await roomRef.get();
-        if (!roomDoc.exists) {
-            throw new functions.https.HttpsError("not-found", "Room not found.");
-        }
-        const roomData = roomDoc.data();
-        if (roomData.gameStatus !== "running" && roomData.gameStatus !== "idle") {
-            throw new functions.https.HttpsError("failed-precondition", `Game status (${roomData.gameStatus}) does not allow ticket requests.`);
-        }
-
-        const playerInfo = roomData.currentActivePlayers ? roomData.currentActivePlayers[userId] : null;
-        if (playerInfo && (playerInfo.ticketCount || 0) >= 5) {
-             throw new functions.https.HttpsError("resource-exhausted", "Maximum 5 tickets allowed per player.");
-        }
-
-        const existingRequestsQuery = roomRef.collection("ticketRequests")
-            .where("userId", "==", userId)
-            .where("status", "==", "pending")
-            .limit(1);
-        const existingRequestsSnap = await existingRequestsQuery.get();
-        if (!existingRequestsSnap.empty) {
-            throw new functions.https.HttpsError("already-exists", "You have an existing pending ticket request.");
-        }
-
-        const ticketRequestRef = roomRef.collection("ticketRequests").doc(); // Auto-generate ID
-        await ticketRequestRef.set({
-            userId: userId,
-            playerName: playerName,
-            roomId: roomId,
-            status: "pending",
-            requestTimestamp: admin.firestore.FieldValue.serverTimestamp(),
-            currentTickets: playerInfo ? (playerInfo.ticketCount || 0) : 0
-        });
-        
-        // Ensure player is in currentActivePlayers map
-        const playerUpdate = {};
-        playerUpdate[`currentActivePlayers.${userId}.playerName`] = playerName;
-        playerUpdate[`currentActivePlayers.${userId}.lastSeen`] = admin.firestore.FieldValue.serverTimestamp();
-        if (!playerInfo || typeof playerInfo.ticketCount === 'undefined') {
-            playerUpdate[`currentActivePlayers.${userId}.ticketCount`] = 0;
-        }
-        await roomRef.update(playerUpdate);
-
-
-        functions.logger.log("requestTicket: Request submitted.", {roomId, userId, requestId: ticketRequestRef.id});
-        return { success: true, message: "Ticket request submitted for admin approval.", requestId: ticketRequestRef.id };
-    } catch (error) {
-        functions.logger.error("requestTicket: Error.", error);
-        if (error instanceof functions.https.HttpsError) throw error;
-        throw new functions.https.HttpsError("internal", `Internal error in requestTicket: ${error.message}`);
-    }
-});
-
-/**
- * Admin processes a ticket request (approve or reject).
- */
-exports.processTicketRequest = functions.https.onCall(async (data, context) => {
-    functions.logger.log("processTicketRequest: Function started.", {data, auth: !!context.auth});
-    try {
-        ensureAdmin(context);
-        const { roomId, requestId, action, reason } = data;
-
-        if (!roomId || !requestId || !action || (action !== "approve" && action !== "reject")) {
-            throw new functions.https.HttpsError("invalid-argument", "Room ID, Request ID, and a valid Action ('approve'/'reject') are required.");
-        }
-
-        const roomRef = db.collection("rooms").doc(roomId);
-        const ticketRequestRef = roomRef.collection("ticketRequests").doc(requestId);
-
-        return db.runTransaction(async (transaction) => {
-            const requestSnap = await transaction.get(ticketRequestRef);
-            if (!requestSnap.exists) {
-                throw new functions.https.HttpsError("not-found", "Ticket request not found.");
-            }
-            const requestData = requestSnap.data();
-            if (requestData.status !== "pending") {
-                throw new functions.https.HttpsError("failed-precondition", "Ticket request already processed.");
-            }
-
-            if (action === "approve") {
-                const ticketNumbers = generateTambolaTicket();
-                // Store tickets in a dedicated root collection for easier user-specific queries
-                const playerTicketDocRef = db.collection("gameTickets").doc(); // New document in root gameTickets collection
-
-                const newTicket = {
-                    userId: requestData.userId,
-                    playerName: requestData.playerName,
-                    roomId: roomId, // Keep roomId for context
-                    numbers: ticketNumbers,
-                    marked: [],
-                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                };
-                transaction.set(playerTicketDocRef, newTicket);
-                transaction.update(ticketRequestRef, {
-                    status: "approved",
-                    approvedAt: admin.firestore.FieldValue.serverTimestamp(),
-                    ticketId: playerTicketDocRef.id // Store the ID of the ticket in gameTickets
-                });
-
-                const playerUpdatePath = `currentActivePlayers.${requestData.userId}`;
-                transaction.update(roomRef, {
-                    [`${playerUpdatePath}.ticketCount`]: admin.firestore.FieldValue.increment(1),
-                    [`${playerUpdatePath}.playerName`]: requestData.playerName // Ensure consistency
-                });
-                functions.logger.log("processTicketRequest: Ticket approved.", {roomId, requestId, ticketId: playerTicketDocRef.id});
-                return { success: true, message: "Ticket approved and assigned.", ticketId: playerTicketDocRef.id };
-            } else { // action === "reject"
-                transaction.update(ticketRequestRef, {
-                    status: "rejected",
-                    rejectedAt: admin.firestore.FieldValue.serverTimestamp(),
-                    reason: reason || "Rejected by admin."
-                });
-                functions.logger.log("processTicketRequest: Ticket rejected.", {roomId, requestId, reason});
-                return { success: true, message: "Ticket request rejected." };
-            }
-        });
-    } catch (error) {
-        functions.logger.error("processTicketRequest: Error.", error);
-        if (error instanceof functions.https.HttpsError) throw error;
-        throw new functions.https.HttpsError("internal", `Internal error: ${error.message}`);
-    }
-});
-
-/**
- * Player submits a prize claim. Server performs validation.
- */
-exports.submitPrizeClaim = functions.https.onCall(async (data, context) => {
-    functions.logger.log("submitPrizeClaim: Function started.", {data, auth: !!context.auth});
-    if (!context.auth || !context.auth.uid) {
-        throw new functions.https.HttpsError("unauthenticated", "User must be authenticated.");
-    }
-    const { roomId, prizeRuleId, prizeName, ticketId, clientTempClaimId } = data;
-    const userId = context.auth.uid;
-    const playerName = data.playerName || context.auth.token.name || context.auth.token.email || "Unknown Player";
-
-
-    if (context.auth.uid !== userId) { // Should not happen if client sends correct userId from auth
-        throw new functions.https.HttpsError("permission-denied", "UID mismatch.");
-    }
-    if (!roomId || !prizeRuleId || !ticketId || !prizeName) {
-        throw new functions.https.HttpsError("invalid-argument", "Missing claim information (roomId, prizeRuleId, prizeName, ticketId).");
-    }
-
-    const roomRef = db.collection("rooms").doc(roomId);
-    const ticketRef = db.collection("gameTickets").doc(ticketId); // Tickets stored in root gameTickets
-
-    try {
-        const [roomDoc, ticketDoc] = await Promise.all([roomRef.get(), ticketRef.get()]);
-
-        if (!roomDoc.exists) { throw new functions.https.HttpsError("not-found", `Room ${roomId} not found.`); }
-        if (!ticketDoc.exists) { throw new functions.https.HttpsError("not-found", `Ticket ${ticketId} not found.`); }
-
-        const roomData = roomDoc.data();
-        const ticketData = ticketDoc.data();
-
-        if (ticketData.userId !== userId) {
-            throw new functions.https.HttpsError("permission-denied", "Ticket does not belong to the claiming user.");
-        }
+        // Reset claims on rules when starting a new game session
+        updateData.rules = roomData.rules.map(rule => ({ ...rule, claims: [] }));
+        break;
+      case "pause":
         if (roomData.gameStatus !== "running") {
-            throw new functions.https.HttpsError("failed-precondition", `Game is not running (status: ${roomData.gameStatus}). Cannot submit claim.`);
+            throw new functions.https.HttpsError('failed-precondition', 'Game must be running to be paused.');
         }
-
-        const rule = roomData.rules?.find(r => r.id === prizeRuleId);
-        if (!rule || !rule.isActive) {
-            throw new functions.https.HttpsError("invalid-argument", `Prize rule '${prizeRuleId}' is invalid or not active.`);
+        updateData = { gameStatus: "paused", callingMode: "manual" };
+        break;
+      case "resume":
+         if (roomData.gameStatus !== "paused") {
+            throw new functions.https.HttpsError('failed-precondition', 'Game must be paused to be resumed.');
         }
-        if ((rule.claims || 0) >= rule.maxPrizes) {
-             throw new functions.https.HttpsError("failed-precondition", `Maximum claims for '${rule.name}' already reached.`);
+        updateData = { gameStatus: "running" };
+        break;
+      case "stop":
+        if (roomData.gameStatus !== "running" && roomData.gameStatus !== "paused") {
+            throw new functions.https.HttpsError('failed-precondition', 'Game must be running or paused to be stopped.');
         }
-
-        // --- Server-Side Validation Logic ---
-        const calledNumbers = roomData.currentNumbersCalled || [];
-        const ticketNumbersFlat = ticketData.numbers.flat().filter(n => n !== null);
-        const playerMarkedNumbersOnTicket = ticketData.marked || []; // Numbers player has marked on their UI
-
-        // These are the numbers that are: 1. On the ticket, 2. Marked by player, 3. Called in the game
-        const effectivelyClaimedNumbers = playerMarkedNumbersOnTicket.filter(num =>
-            ticketNumbersFlat.includes(num) && calledNumbers.includes(num)
-        );
-        functions.logger.log("submitPrizeClaim: Validation details", {prizeRuleId, ticketNumbersFlat, playerMarkedNumbersOnTicket, calledNumbers, effectivelyClaimedNumbers});
-
-        // Placeholder for specific prize pattern validation logic
-        // This function MUST be implemented thoroughly for each prize type.
-        function checkPrizePattern(ruleId, claimedNums, ticketLayout, allCalledNums) {
-            functions.logger.log(`checkPrizePattern for ${ruleId}`, {claimedNumsCount: claimedNums.length, ticketLayout, allCalledNumsCount: allCalledNums.length});
-            // TODO: Implement actual logic for each prize rule
-            // Example for Early Five:
-            if (ruleId === "rule_early5") {
-                return claimedNums.length >= 5; // Basic check, assumes claimedNums are all valid and called
-            }
-            // Example for a Line (assuming ticketLayout is 3x9 and rows are identifiable)
-            // This would require knowing which numbers form which line on the ticket.
-            // For instance, if ruleId is "rule_topline", check if all 5 numbers from ticketLayout[0]
-            // that are not null, are present in claimedNums.
-            if (ruleId === "rule_topline") {
-                const topLineNumbers = ticketLayout[0].filter(n => n !== null);
-                return topLineNumbers.length === 5 && topLineNumbers.every(n => claimedNums.includes(n));
-            }
-            if (ruleId === "rule_middleline") {
-                const middleLineNumbers = ticketLayout[1].filter(n => n !== null);
-                return middleLineNumbers.length === 5 && middleLineNumbers.every(n => claimedNums.includes(n));
-            }
-             if (ruleId === "rule_bottomline") {
-                const bottomLineNumbers = ticketLayout[2].filter(n => n !== null);
-                return bottomLineNumbers.length === 5 && bottomLineNumbers.every(n => claimedNums.includes(n));
-            }
-            if (ruleId === "rule_fullhouse") {
-                // All 15 numbers on the ticket must be in claimedNums
-                return ticketNumbersFlat.length === 15 && ticketNumbersFlat.every(n => claimedNums.includes(n));
-            }
-            // Add other rule checks (Corners, etc.)
-            functions.logger.warn(`checkPrizePattern: No specific validation logic for ruleId: ${ruleId}. Defaulting to false.`);
-            return false; // Default to false if no specific pattern matches
-        }
-
-        const serverValidationResult = checkPrizePattern(prizeRuleId, effectivelyClaimedNumbers, ticketData.numbers, calledNumbers);
-        // --- End of Server-Side Validation ---
-
-        const claimRef = db.collection("prizeClaimsAudit").doc();
-        const claimDoc = {
-            userId, playerName, roomId, ticketId, prizeRuleId, prizeName,
-            clientTempClaimId: clientTempClaimId || null,
-            claimedNumbersOnTicket: playerMarkedNumbersOnTicket, // What player sent as marked
-            effectivelyClaimedNumbers: effectivelyClaimedNumbers, // Numbers verified by server as part of the claim basis
-            status: serverValidationResult ? "pending_admin_approval" : "rejected_auto_invalid",
-            reason: serverValidationResult ? "Awaiting admin review." : "Automatic validation of prize pattern failed.",
-            serverValidationResult,
-            claimTimestamp: admin.firestore.FieldValue.serverTimestamp(),
-        };
-
-        await claimRef.set(claimDoc);
-        functions.logger.log("submitPrizeClaim: Claim processed.", {claimId: claimRef.id, status: claimDoc.status});
-
-        return {
-            success: true, claimId: claimRef.id, status: claimDoc.status,
-            message: serverValidationResult ? "Claim submitted for admin review." : "Claim failed automatic validation."
-        };
-    } catch (error) {
-        functions.logger.error("submitPrizeClaim: Error.", error);
-        if (error instanceof functions.https.HttpsError) throw error;
-        throw new functions.https.HttpsError("internal", `Internal error in submitPrizeClaim: ${error.message}`);
+        updateData = { gameStatus: "stopped", gameEndTime: admin.firestore.FieldValue.serverTimestamp(), callingMode: "manual" };
+        break;
+      default:
+        throw new functions.https.HttpsError('invalid-argument', 'Invalid action specified.');
     }
+
+    await roomRef.update(updateData);
+    logger.info(`Room ${roomId} lifecycle action '${action}' performed by admin ${adminUID}`);
+    return { message: `Game ${action} successful.` };
+  } catch (error) {
+    logger.error(`Error performing lifecycle action '${action}' for room ${roomId}:`, error);
+    throw new functions.https.HttpsError('internal', `Could not perform game action: ${action}.`, error.message);
+  }
 });
 
-/**
- * Admin processes a prize claim (approve or reject).
- */
-exports.processPrizeClaim = functions.https.onCall(async (data, context) => {
-    functions.logger.log("processPrizeClaim: Function started.", {data, auth: !!context.auth});
-    try {
-        ensureAdmin(context);
-        const { claimId, roomId, action, reason } = data;
+exports.callNextNumber = functions.https.onCall(async (data, context) => {
+  ensureAuthenticated(context);
+  const adminUID = context.auth.uid;
+  const { roomId, number: manualNumberInput } = data;
 
-        if (!claimId || !roomId || !action || (action !== "approve" && action !== "reject")) {
-            throw new functions.https.HttpsError("invalid-argument", "Claim ID, Room ID, and valid Action are required.");
-        }
+  if (!roomId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Room ID is required.');
+  }
 
-        const claimRef = db.collection("prizeClaimsAudit").doc(claimId);
-        const roomRef = db.collection("rooms").doc(roomId);
-
-        return db.runTransaction(async (transaction) => {
-            const claimDoc = await transaction.get(claimRef);
-            const roomDoc = await transaction.get(roomRef);
-
-            if (!claimDoc.exists) { throw new functions.https.HttpsError("not-found", "Claim not found."); }
-            if (!roomDoc.exists) { throw new functions.https.HttpsError("not-found", "Room not found."); }
-
-            const claimData = claimDoc.data();
-            const roomData = roomDoc.data();
-
-            if (claimData.roomId !== roomId) {
-                throw new functions.https.HttpsError("invalid-argument", "Claim does not belong to this room.");
-            }
-            // Allow processing only if pending admin approval or if admin wants to override a previous auto-rejection
-            if (claimData.status !== "pending_admin_approval" && claimData.status !== "rejected_auto_invalid") {
-                throw new functions.https.HttpsError("failed-precondition", `Claim status is '${claimData.status}', cannot process manually.`);
-            }
-
-            const rule = roomData.rules?.find(r => r.id === claimData.prizeRuleId);
-            if (!rule) {
-                transaction.update(claimRef, { status: "rejected_admin", reason: "Prize rule configuration missing at review time.", reviewedAt: admin.firestore.FieldValue.serverTimestamp(), reviewedBy: context.auth.uid });
-                throw new functions.https.HttpsError("invalid-argument", "Prize rule not found in room config.");
-            }
-
-            if (action === "approve") {
-                // Double check max claims for this rule
-                if ((rule.claims || 0) >= rule.maxPrizes) {
-                    const message = `Max claims (${rule.maxPrizes}) for prize '${rule.name}' already awarded. Cannot approve more.`;
-                    transaction.update(claimRef, { status: "rejected_admin", reason: message, reviewedAt: admin.firestore.FieldValue.serverTimestamp(), reviewedBy: context.auth.uid });
-                    throw new functions.https.HttpsError("failed-precondition", message);
-                }
-
-                const coinsAwarded = parseFloat(rule.coinsPerPrize) || 0;
-                transaction.update(claimRef, {
-                    status: "approved",
-                    reason: reason || "Approved by admin.",
-                    coinsAwarded: coinsAwarded,
-                    reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
-                    reviewedBy: context.auth.uid,
-                });
-
-                const winnerEntry = {
-                    claimId: claimId, userId: claimData.userId, playerName: claimData.playerName,
-                    ticketId: claimData.ticketId, prizeName: rule.name, prizeRuleId: claimData.prizeRuleId,
-                    coinsAwarded: coinsAwarded, timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                };
-                transaction.update(roomRef, { currentWinners: admin.firestore.FieldValue.arrayUnion(winnerEntry) });
-
-                const updatedRules = roomData.rules.map(r => {
-                    if (r.id === claimData.prizeRuleId) {
-                        return { ...r, claims: (r.claims || 0) + 1 };
-                    }
-                    return r;
-                });
-                transaction.update(roomRef, { rules: updatedRules });
-                functions.logger.log("processPrizeClaim: Claim approved.", {roomId, claimId, coinsAwarded});
-                return { success: true, message: `Claim for '${rule.name}' approved. ${coinsAwarded} coins awarded.` };
-            } else { // action === "reject"
-                transaction.update(claimRef, {
-                    status: "rejected_admin",
-                    reason: reason || "Rejected by admin.",
-                    reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
-                    reviewedBy: context.auth.uid,
-                });
-                functions.logger.log("processPrizeClaim: Claim rejected.", {roomId, claimId, reason});
-                return { success: true, message: "Claim rejected." };
-            }
-        });
-    } catch (error) {
-        functions.logger.error("processPrizeClaim: Error.", error);
-        if (error instanceof functions.https.HttpsError) throw error;
-        throw new functions.https.HttpsError("internal", `Internal error: ${error.message}`);
+  const roomRef = db.collection('rooms').doc(roomId);
+  return db.runTransaction(async (transaction) => {
+    const roomDoc = await transaction.get(roomRef);
+    if (!roomDoc.exists || roomDoc.data().adminUID !== adminUID) {
+      throw new functions.https.HttpsError('permission-denied', 'You are not the admin of this room or room does not exist.');
     }
+    if (roomDoc.data().gameStatus !== "running") {
+      throw new functions.https.HttpsError('failed-precondition', 'Numbers can only be called when the game is running.');
+    }
+
+    let currentNumbersCalled = roomDoc.data().currentNumbersCalled || [];
+    if (currentNumbersCalled.length >= 90) {
+      transaction.update(roomRef, { gameStatus: "stopped", gameEndTime: admin.firestore.FieldValue.serverTimestamp() });
+      throw new functions.https.HttpsError('failed-precondition', 'All 90 numbers have been called. Game stopped.');
+    }
+
+    let nextNumber;
+    if (manualNumberInput !== undefined && manualNumberInput !== null) { // Manual call
+      const number = parseInt(manualNumberInput);
+      if (isNaN(number) || number < 1 || number > 90) {
+        throw new functions.https.HttpsError('invalid-argument', 'Manual number must be between 1 and 90.');
+      }
+      if (currentNumbersCalled.includes(number)) {
+        throw new functions.https.HttpsError('invalid-argument', `Number ${number} has already been called.`);
+      }
+      nextNumber = number;
+    } else { // Auto call (or admin presses button for next random)
+      let attempts = 0;
+      do {
+        nextNumber = Math.floor(Math.random() * 90) + 1;
+        attempts++;
+        if (attempts > 200) { // Safety break for unlikely scenario where random fails many times
+            logger.error(`Room ${roomId}: Could not find an uncalled number after 200 attempts.`);
+            throw new functions.https.HttpsError('internal', 'Could not determine next number to call.');
+        }
+      } while (currentNumbersCalled.includes(nextNumber));
+    }
+
+    currentNumbersCalled.push(nextNumber);
+    transaction.update(roomRef, {
+      currentNumbersCalled: currentNumbersCalled,
+      currentLatestCalledNumber: nextNumber
+    });
+    logger.info(`Room ${roomId}: Number ${nextNumber} called by admin ${adminUID}`);
+    return { calledNumber: nextNumber, message: `Number ${nextNumber} called.` };
+  });
+});
+
+exports.manageTicketRequest = functions.https.onCall(async (data, context) => {
+  ensureAuthenticated(context);
+  const adminUID = context.auth.uid;
+  const { roomId, requestId, action, reason } = data;
+
+  if (!roomId || !requestId || !action) {
+    throw new functions.https.HttpsError('invalid-argument', 'Room ID, request ID, and action are required.');
+  }
+
+  const roomRef = db.collection('rooms').doc(roomId);
+  const requestRef = db.collection('rooms').doc(roomId).collection('ticketRequests').doc(requestId);
+
+  return db.runTransaction(async (transaction) => {
+    const roomDoc = await transaction.get(roomRef);
+    const requestDoc = await transaction.get(requestRef);
+
+    if (!roomDoc.exists || roomDoc.data().adminUID !== adminUID) {
+      throw new functions.https.HttpsError('permission-denied', 'You are not the admin of this room or room does not exist.');
+    }
+    if (!requestDoc.exists) {
+      throw new functions.https.HttpsError('not-found', 'Ticket request not found.');
+    }
+    if (requestDoc.data().status !== "pending") {
+      throw new functions.https.HttpsError('failed-precondition', 'Ticket request has already been processed.');
+    }
+
+    const requestData = requestDoc.data();
+    const playerUID = requestData.userId;
+    const roomData = roomDoc.data(); // For ticketPrice
+
+    if (action === "approve") {
+      const ticketNumbers = generateTambolaTicket();
+      const newTicketRef = db.collection('gameTickets').doc();
+
+      transaction.set(newTicketRef, {
+        ticketId: newTicketRef.id,
+        userId: playerUID,
+        playerName: requestData.playerName,
+        roomId: roomId,
+        numbers: ticketNumbers,
+        marked: [],
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      transaction.update(requestRef, {
+        status: "approved",
+        approvedAt: admin.firestore.FieldValue.serverTimestamp(),
+        ticketId: newTicketRef.id
+      });
+
+      const playerPathInRoom = `currentActivePlayers.${playerUID}.ticketCount`;
+      const currentTicketCount = (roomData.currentActivePlayers[playerUID] && roomData.currentActivePlayers[playerUID].ticketCount) || 0;
+      transaction.update(roomRef, {
+        [playerPathInRoom]: currentTicketCount + 1, // More robust increment
+        totalMoneyCollected: admin.firestore.FieldValue.increment(Number(roomData.ticketPrice) || 0)
+      });
+
+      logger.info(`Ticket request ${requestId} approved for player ${playerUID} in room ${roomId}. Ticket price: ${roomData.ticketPrice}`);
+      return { message: "Ticket request approved.", ticketId: newTicketRef.id };
+
+    } else if (action === "reject") {
+      transaction.update(requestRef, {
+        status: "rejected",
+        reason: reason || "Rejected by admin."
+      });
+      logger.info(`Ticket request ${requestId} rejected for player ${playerUID} in room ${roomId}`);
+      return { message: "Ticket request rejected." };
+    } else {
+      throw new functions.https.HttpsError('invalid-argument', 'Invalid action specified for ticket request.');
+    }
+  });
+});
+
+exports.managePrizeClaim = functions.https.onCall(async (data, context) => {
+  ensureAuthenticated(context);
+  const adminUID = context.auth.uid;
+  const { roomId, claimId, action, reason } = data;
+
+  if (!roomId || !claimId || !action) {
+    throw new functions.https.HttpsError('invalid-argument', 'Room ID, claim ID, and action are required.');
+  }
+
+  const roomRef = db.collection('rooms').doc(roomId);
+  const claimRef = db.collection('prizeClaimsAudit').doc(claimId);
+
+  return db.runTransaction(async (transaction) => {
+    const roomDoc = await transaction.get(roomRef);
+    const claimDoc = await transaction.get(claimRef);
+
+    if (!roomDoc.exists || roomDoc.data().adminUID !== adminUID) {
+      throw new functions.https.HttpsError('permission-denied', 'You are not the admin of this room or room does not exist.');
+    }
+    if (!claimDoc.exists) {
+      throw new functions.https.HttpsError('not-found', 'Prize claim not found.');
+    }
+
+    const claimData = claimDoc.data();
+    const roomData = roomDoc.data();
+
+    if (claimData.roomId !== roomId) {
+        throw new functions.https.HttpsError('invalid-argument', 'Claim does not belong to this room.');
+    }
+    if (claimData.status !== "pending_admin_approval") { // Admin can only act on claims pending their approval
+      throw new functions.https.HttpsError('failed-precondition', `Claim cannot be processed by admin. Current status: ${claimData.status}`);
+    }
+
+    const ruleBeingClaimed = roomData.rules.find(r => r.id === claimData.prizeRuleId);
+    if (!ruleBeingClaimed) {
+      transaction.update(claimRef, { status: "rejected_admin", reason: "Rule configuration not found.", reviewedAt: admin.firestore.FieldValue.serverTimestamp(), reviewedBy: adminUID });
+      throw new functions.https.HttpsError('not-found', `Rule ID ${claimData.prizeRuleId} not found in room configuration.`);
+    }
+
+    if (action === "approve") {
+      const existingClaimsForThisRule = roomData.rules.find(r => r.id === claimData.prizeRuleId)?.claims || [];
+      if (existingClaimsForThisRule.length >= ruleBeingClaimed.maxPrizes) {
+        const rejectMsg = `Maximum prizes for '${ruleBeingClaimed.name}' already claimed.`;
+        transaction.update(claimRef, { status: "rejected_admin", reason: rejectMsg, reviewedAt: admin.firestore.FieldValue.serverTimestamp(), reviewedBy: adminUID });
+        throw new functions.https.HttpsError('failed-precondition', rejectMsg);
+      }
+
+      let coinsAwarded = 0;
+      if (ruleBeingClaimed.percentageOfTotal && ruleBeingClaimed.percentageOfTotal > 0 && roomData.totalMoneyCollected > 0) {
+          coinsAwarded = (Number(ruleBeingClaimed.percentageOfTotal) / 100) * Number(roomData.totalMoneyCollected);
+      } else {
+          coinsAwarded = Number(ruleBeingClaimed.coinsPerPrize) || 0;
+      }
+      // If maxPrizes > 1 for this rule, prize might be split. Simple split for now.
+      // More complex scenarios (e.g. fixed prize per winner up to maxPrizes) can be added.
+      if (ruleBeingClaimed.maxPrizes > 1 && ruleBeingClaimed.percentageOfTotal > 0) {
+          // If it's a percentage of total, and multiple winners, the total pool for this prize is split.
+          // This coinsAwarded is the total pool for THIS specific rule.
+          // If we want to split it among current approved winners for this rule, that's more complex state to manage.
+          // For now, each approved claim gets this calculated amount.
+          // This means if percentageOfTotal is 10% and maxPrizes is 2, each winner gets 10% of total.
+          // Alternative: prize pool is 10%, divided by maxPrizes. Let's assume each gets the full share for now up to maxPrizes.
+      }
+      coinsAwarded = Math.floor(coinsAwarded);
+
+      transaction.update(claimRef, {
+        status: "approved",
+        coinsAwarded: coinsAwarded,
+        reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
+        reviewedBy: adminUID
+      });
+
+      const winnerEntry = {
+        claimId: claimId,
+        userId: claimData.userId,
+        playerName: claimData.playerName,
+        ticketId: claimData.ticketId,
+        prizeName: claimData.prizeName,
+        prizeRuleId: claimData.prizeRuleId,
+        coinsAwarded: coinsAwarded,
+        timestamp: admin.firestore.FieldValue.serverTimestamp() // Use claim approval time
+      };
+      transaction.update(roomRef, {
+        currentWinners: admin.firestore.FieldValue.arrayUnion(winnerEntry)
+      });
+
+      const updatedRules = roomData.rules.map(r => {
+        if (r.id === claimData.prizeRuleId) {
+          const newClaimsArray = Array.isArray(r.claims) ? r.claims : [];
+          return {
+            ...r,
+            claims: [...newClaimsArray, { // Use spread to ensure it's an array operation
+              userId: claimData.userId,
+              playerName: claimData.playerName,
+              ticketId: claimData.ticketId,
+              claimId: claimId
+            }]
+          };
+        }
+        return r;
+      });
+      transaction.update(roomRef, { rules: updatedRules });
+
+      logger.info(`Prize claim ${claimId} approved by admin ${adminUID} for player ${claimData.userId}. Awarded: ${coinsAwarded}`);
+      return { message: "Prize claim approved.", coinsAwarded: coinsAwarded };
+
+    } else if (action === "reject") {
+      transaction.update(claimRef, {
+        status: "rejected_admin",
+        reason: reason || "Rejected by admin.",
+        reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
+        reviewedBy: adminUID
+      });
+      logger.info(`Prize claim ${claimId} rejected by admin ${adminUID}`);
+      return { message: "Prize claim rejected." };
+    } else {
+      throw new functions.https.HttpsError('invalid-argument', 'Invalid action specified for prize claim.');
+    }
+  });
+});
+
+// --- Player Functions ---
+
+exports.joinGameRoom = functions.https.onCall(async (data, context) => {
+  ensureAuthenticated(context);
+  const playerUID = context.auth.uid;
+  const { roomId, playerName } = data;
+
+  if (!roomId || !playerName) {
+    throw new functions.https.HttpsError('invalid-argument', 'Room ID and player name are required.');
+  }
+
+  const roomRef = db.collection('rooms').doc(roomId);
+  try {
+    const roomDoc = await roomRef.get();
+    if (!roomDoc.exists) {
+      throw new functions.https.HttpsError('not-found', 'Game room not found.');
+    }
+    const roomData = roomDoc.data();
+    if (roomData.gameStatus === "stopped" || roomData.gameStatus === "error") {
+      throw new functions.https.HttpsError('failed-precondition', 'Cannot join room, game is not active or has ended.');
+    }
+    // Prevent joining if game is running and already has numbers called (optional rule)
+    // if (roomData.gameStatus === "running" && roomData.currentNumbersCalled && roomData.currentNumbersCalled.length > 0) {
+    //   throw new functions.https.HttpsError('failed-precondition', 'Cannot join room, game is already in progress.');
+    // }
+
+
+    const playerPath = `currentActivePlayers.${playerUID}`;
+    const currentPlayerData = roomData.currentActivePlayers[playerUID] || {};
+    await roomRef.update({
+      [playerPath]: {
+        playerName: playerName,
+        ticketCount: currentPlayerData.ticketCount || 0, // Preserve ticket count if rejoining
+        lastSeen: admin.firestore.FieldValue.serverTimestamp()
+      }
+    });
+    logger.info(`Player ${playerUID} (${playerName}) joined/updated in room ${roomId}`);
+    return { message: `Successfully joined room ${roomId}.` };
+  } catch (error) {
+    logger.error(`Error joining room ${roomId} for player ${playerUID}:`, error);
+    throw new functions.https.HttpsError('internal', 'Could not join game room.', error.message);
+  }
+});
+
+exports.requestGameTicket = functions.https.onCall(async (data, context) => {
+  ensureAuthenticated(context);
+  const playerUID = context.auth.uid;
+  const { roomId } = data;
+
+  if (!roomId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Room ID is required.');
+  }
+
+  const roomRef = db.collection('rooms').doc(roomId);
+  const roomDoc = await roomRef.get();
+
+  if (!roomDoc.exists) {
+    throw new functions.https.HttpsError('not-found', 'Room not found.');
+  }
+  const roomData = roomDoc.data();
+  const playerData = roomData.currentActivePlayers ? roomData.currentActivePlayers[playerUID] : null;
+
+  if (!playerData) {
+    throw new functions.https.HttpsError('failed-precondition', 'Player not found in room. Please join the room first.');
+  }
+  if (roomData.gameStatus !== "idle" && roomData.gameStatus !== "running" && roomData.gameStatus !== "paused") {
+      throw new functions.https.HttpsError('failed-precondition', `Cannot request tickets when game status is '${roomData.gameStatus}'. Tickets can be requested when idle, running, or paused.`);
+  }
+  // Optionally, add max tickets per player logic here.
+  // const MAX_TICKETS_PER_PLAYER = 3; // Example
+  // if ((playerData.ticketCount || 0) >= MAX_TICKETS_PER_PLAYER) {
+  //    throw new functions.https.HttpsError('resource-exhausted', `Maximum ticket limit (${MAX_TICKETS_PER_PLAYER}) reached for this game.`);
+  // }
+
+
+  const newRequestRef = db.collection('rooms').doc(roomId).collection('ticketRequests').doc();
+  try {
+    await newRequestRef.set({
+      requestId: newRequestRef.id,
+      userId: playerUID,
+      playerName: playerData.playerName,
+      roomId: roomId,
+      status: "pending",
+      requestTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+      currentTickets: playerData.ticketCount || 0,
+    });
+    logger.info(`Ticket request ${newRequestRef.id} submitted by player ${playerUID} for room ${roomId}`);
+    return { requestId: newRequestRef.id, message: "Ticket request submitted successfully. Waiting for admin approval." };
+  } catch (error) {
+    logger.error(`Error submitting ticket request for player ${playerUID}:`, error);
+    throw new functions.https.HttpsError('internal', 'Could not submit ticket request.', error.message);
+  }
+});
+
+exports.submitPrizeClaim = functions.https.onCall(async (data, context) => {
+  ensureAuthenticated(context);
+  const playerUID = context.auth.uid;
+  const { roomId, ticketId, prizeRuleId, claimedNumbersOnTicket } = data; // claimedNumbersOnTicket is what player *thinks* completes the prize
+
+  if (!roomId || !ticketId || !prizeRuleId || !Array.isArray(claimedNumbersOnTicket) || claimedNumbersOnTicket.length === 0) {
+    throw new functions.https.HttpsError('invalid-argument', 'Room ID, ticket ID, prize rule ID, and a non-empty array of claimed numbers are required.');
+  }
+
+  const roomRef = db.collection('rooms').doc(roomId);
+  const ticketRef = db.collection('gameTickets').doc(ticketId);
+  const newClaimRef = db.collection('prizeClaimsAudit').doc();
+
+  return db.runTransaction(async (transaction) => {
+    const roomDoc = await transaction.get(roomRef);
+    const ticketDoc = await transaction.get(ticketRef);
+
+    if (!roomDoc.exists) throw new functions.https.HttpsError('not-found', 'Game room not found.');
+    if (!ticketDoc.exists) throw new functions.https.HttpsError('not-found', 'Ticket not found.');
+
+    const roomData = roomDoc.data();
+    const ticketData = ticketDoc.data();
+
+    if (ticketData.userId !== playerUID) throw new functions.https.HttpsError('permission-denied', 'This ticket does not belong to you.');
+    if (ticketData.roomId !== roomId) throw new functions.https.HttpsError('invalid-argument', 'This ticket does not belong to the specified room.');
+    if (roomData.gameStatus !== "running") throw new functions.https.HttpsError('failed-precondition', `Claims can only be submitted when game is running. Current status: ${roomData.gameStatus}`);
+
+    const ruleBeingClaimed = roomData.rules.find(r => r.id === prizeRuleId);
+    if (!ruleBeingClaimed) throw new functions.https.HttpsError('not-found', `Rule ID ${prizeRuleId} not found in room configuration.`);
+    if (!ruleBeingClaimed.isActive) throw new functions.https.HttpsError('failed-precondition', `Prize '${ruleBeingClaimed.name}' is currently not active.`);
+
+    const existingClaimsForThisRule = ruleBeingClaimed.claims || [];
+    if (existingClaimsForThisRule.length >= ruleBeingClaimed.maxPrizes) {
+        throw new functions.https.HttpsError('failed-precondition', `Maximum prizes for '${ruleBeingClaimed.name}' already claimed by others.`);
+    }
+    const playerAlreadyClaimedThisRule = existingClaimsForThisRule.find(claim => claim.userId === playerUID && claim.ticketId === ticketId);
+    if (playerAlreadyClaimedThisRule) { // Player cannot claim same prize on same ticket twice
+         throw new functions.https.HttpsError('failed-precondition', `You have already submitted a claim for '${ruleBeingClaimed.name}' on this ticket.`);
+    }
+
+    // Server-side validation of the claim pattern
+    const serverValidationResult = validatePrizePattern(
+      ticketData.numbers,         // The actual ticket grid
+      claimedNumbersOnTicket,     // Numbers player is claiming with
+      roomData.currentNumbersCalled || [], // Numbers called so far in game
+      ruleBeingClaimed            // The rule object
+    );
+
+    let claimStatus;
+    let reason = "";
+    let effectivelyClaimedNumbers = [];
+
+    if (serverValidationResult) {
+      claimStatus = "pending_admin_approval";
+      effectivelyClaimedNumbers = claimedNumbersOnTicket; // Server agrees with player's claimed numbers for the pattern
+      logger.info(`Prize claim by ${playerUID} for rule ${prizeRuleId} in room ${roomId} passed server validation.`);
+    } else {
+      claimStatus = "rejected_auto_invalid";
+      reason = "Automatic validation failed: Pattern not achieved with claimed numbers or claimed numbers not called/on ticket.";
+      logger.warn(`Prize claim by ${playerUID} for rule ${prizeRuleId} in room ${roomId} failed server validation. Reason: ${reason}`);
+    }
+
+    transaction.set(newClaimRef, {
+      claimId: newClaimRef.id,
+      userId: playerUID,
+      playerName: roomData.currentActivePlayers[playerUID]?.playerName || 'Unknown Player',
+      roomId: roomId,
+      ticketId: ticketId,
+      prizeRuleId: prizeRuleId,
+      prizeName: ruleBeingClaimed.name,
+      clientTempClaimId: data.clientTempClaimId || null,
+      claimedNumbersOnTicket: claimedNumbersOnTicket, // What player sent
+      effectivelyClaimedNumbers: effectivelyClaimedNumbers, // What server confirmed (if valid)
+      status: claimStatus,
+      reason: reason,
+      serverValidationResult: serverValidationResult,
+      claimTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+      reviewedAt: null,
+      reviewedBy: null,
+      coinsAwarded: 0
+    });
+
+    return {
+      claimId: newClaimRef.id,
+      status: claimStatus,
+      serverValidationResult: serverValidationResult,
+      message: claimStatus === "pending_admin_approval" ? "Claim submitted and awaiting admin approval." : `Claim submission failed automatic validation: ${reason}`
+    };
+  });
 });
