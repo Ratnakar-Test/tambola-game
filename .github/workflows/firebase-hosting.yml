@@ -35,6 +35,6 @@ jobs:
           npm install
 
       - name: Deploy to Firebase
-        run: firebase deploy --project tambola-premium --force
+        run: firebase deploy --only functions --project tambola-premium --force
         # If you want to be more specific:
         # run: firebase deploy --only hosting,functions --project tambola-premium --force
