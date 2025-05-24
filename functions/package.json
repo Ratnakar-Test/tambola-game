@@ -13,12 +13,12 @@
   },
   "main": "index.js",
   "dependencies": {
-    "firebase-admin": "^12.0.0",  // For interacting with Firebase services (Firestore, Auth) from the backend
-    "firebase-functions": "^5.0.0" // Core Firebase Functions SDK
-    // Add other dependencies here as needed, e.g., for QR code generation if done backend
+    "firebase-admin": "^12.0.0",  
+    "firebase-functions": "^5.0.0" 
+    
   },
   "devDependencies": {
-    // You might add linters or other dev tools here if you were working locally
+    
   },
   "private": true
 }
