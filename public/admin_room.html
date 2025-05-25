@@ -1,720 +1,446 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tambola Admin - Game Room</title>
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@latest/dist/full.css" rel="stylesheet" type="text/css" />
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
-
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-    <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-    <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-    <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-functions-compat.js"></script>
-
-    <script>
-        console.log("Global script for Firebase init starting (should run after app SDK)...");
-        
-        const firebaseConfig = {
-            apiKey: "AIzaSyDeQ3YkvRLvPFnpTPz-aDyh9Yr6JNLqWF0", // Your actual config
-            authDomain: "tambola-premium.firebaseapp.com",
-            projectId: "tambola-premium",
-            storageBucket: "tambola-premium.firebasestorage.app",
-            messagingSenderId: "431036089573",
-            appId: "1:431036089573:web:523500fb519d887535800c",
-            measurementId: "G-EQHHTY8QKE"
-        };
-
-        // Declare global Firebase service variables
-        let fbAuth, fbDb, fbFunctions; 
-        window.firebaseServicesInitialized = false; // Global flag
-
-        try {
-            if (typeof firebase !== 'undefined') { // Check if firebase-app-compat.js loaded
-                if (!firebase.apps.length) {
-                    firebase.initializeApp(firebaseConfig);
-                    console.log("Firebase App Initialized.");
-                } else {
-                    firebase.app(); 
-                    console.log("Firebase App already initialized.");
-                }
-
-                fbAuth = firebase.auth();
-                fbDb = firebase.firestore();
-                fbFunctions = firebase.functions(); 
-
-                console.log("Firebase Auth assigned (fbAuth):", typeof fbAuth);
-                console.log("Firestore assigned (fbDb):", typeof fbDb);
-                console.log("Firebase Functions assigned (fbFunctions):", typeof fbFunctions);
-                window.firebaseServicesInitialized = true;
-                console.log("Firebase services initialization flag set to true.");
-
-            } else {
-                 console.error("CRITICAL: Firebase global object not found. Core App SDK did not load.");
-                 alert("CRITICAL Error: Firebase SDKs not loaded. Please refresh.");
-            }
-        } catch (e) {
-            console.error("Error during global Firebase SDK initialization:", e);
-            window.firebaseServicesInitialized = false; 
-        }
-        console.log("Global script for Firebase init finished. Services initialized flag:", window.firebaseServicesInitialized);
-    </script>
-
-    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <title>Tambola Admin - Room Management</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/antd/4.24.10/antd.min.css" xintegrity="sha512-QAna2V5YCFZWMzCptqsdBfM9gKL3K0tR3jQCk27F/H9FT2Y8oHh07bVjS85jC5eEbK2B3wUoEJNhlLWP13Z20g==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/ant-design-icons/4.8.0/antd-icons.min.css" xintegrity="sha512-8ev9QLPSSt3Jt5RaGefUT3L2mKnK73sR2OFMIsYfHhIIHd44U8r4YQkH5Sj8kGjLz2JSVNgSb7P9f2Hh9V0n3Q==" crossorigin="anonymous" referrerpolicy="no-referrer" />
 
     <style>
-        body { font-family: 'Inter', sans-serif; display:flex; flex-direction:column; min-height:100vh; }
-        .flex-grow { flex-grow: 1; }
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: #f1f1f1; }
-        ::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #555; }
-        .drawer-side > *:not(label) { overflow-y: auto; }
-        .number-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 0.5rem; max-width: 800px; margin: auto; }
-        .number-cell { display: flex; align-items: center; justify-content: center; aspect-ratio: 1 / 1; border-radius: 0.375rem; font-weight: bold; transition: all 0.3s; }
-        .number-cell.called { background-color: oklch(var(--p)); color: oklch(var(--pc)); transform: scale(1.1); box-shadow: 0 0 10px oklch(var(--p)); }
-        .number-cell.latest { animation: pulse 1s infinite; }
-        @keyframes pulse { 0%, 100% { transform: scale(1.1); box-shadow: 0 0 10px oklch(var(--p)); } 50% { transform: scale(1.25); box-shadow: 0 0 18px oklch(var(--p)); } }
-        .bottom-nav-controls-container { position: fixed; bottom: 0; left: 0; right: 0; background-color: oklch(var(--b1)); padding: 0.5rem; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); z-index: 45; display: flex; flex-direction: column; gap: 0.5rem; border-top: 1px solid oklch(var(--b3)); }
-        .control-bar { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; justify-content: space-around; width: 100%; padding: 0.25rem 0; }
-        .control-bar:not(:last-child) { border-bottom: 1px solid oklch(var(--b3)); padding-bottom: 0.75rem; margin-bottom: 0.25rem; }
-        .game-message-popup { position: fixed; top: 80px; right: 1rem; padding: 0.75rem 1rem; border-radius: 0.375rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1); font-size: 0.875rem; z-index: 1000; max-width: 300px; word-wrap: break-word; }
-        main[data-bottom-nav-visible="true"] { padding-bottom: 140px; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+                'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+                'Noto Color Emoji';
+            background-color: #f0f2f5;
+            margin: 0;
+        }
+        #loading-spinner-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(255, 255, 255, 0.7);
+            z-index: 1001; /* Higher than header */
+        }
+        .admin-layout .ant-layout-header {
+            background: #001529;
+            padding: 0 24px; /* Adjust padding */
+            color: white;
+            position: fixed;
+            top: 0;
+            width: 100%;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .admin-layout .header-logo {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: white;
+        }
+        .admin-layout .header-right-menu {
+            display: flex;
+            align-items: center;
+        }
+         .admin-layout .ant-layout-sider {
+            position: fixed;
+            left: 0;
+            top: 64px; /* Height of the header */
+            height: calc(100% - 64px); /* Adjust based on header height */
+            background: #001529;
+            overflow: auto;
+             z-index: 999;
+        }
+        .admin-layout .ant-layout-content {
+            margin-top: 88px; /* Header height + some padding */
+            margin-bottom: 70px; /* Footer height */
+            padding: 24px;
+            background: #fff;
+            min-height: calc(100vh - 64px - 50px - 48px); /* Full height minus header, footer, padding */
+        }
+        .admin-layout .ant-layout-footer {
+            text-align: center;
+            background: #001529;
+            color: rgba(255,255,255,0.65);
+            padding: 15px 50px;
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+            z-index: 1000;
+        }
+        /* Adjust content margin when sider is collapsed/expanded */
+        .content-expanded {
+            margin-left: 200px; /* Width of expanded sider */
+            transition: margin-left 0.2s;
+        }
+        .content-collapsed {
+            margin-left: 80px; /* Width of collapsed sider */
+            transition: margin-left 0.2s;
+        }
+        .form-section-title {
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .rule-item-card {
+            margin-bottom: 16px;
+            background-color: #fafafa;
+        }
+        .site-page-header-ghost-wrapper {
+            background-color: #f5f5f5; /* Example, adjust as needed */
+            padding: 24px;
+        }
+
     </style>
 </head>
-<body x-data="adminRoom()" x-init="alpineComponentInit()">
-    <div class="drawer lg:drawer-open">
-        <input id="my-drawer" type="checkbox" class="drawer-toggle" x-model="isDrawerOpen" />
-        <div class="drawer-content flex flex-col bg-base-200">
-            <nav class="navbar bg-base-100 shadow-lg sticky top-0 z-30">
-                <div class="flex-none">
-                    <label for="my-drawer" class="btn btn-square btn-ghost lg:hidden" aria-label="Open menu">
-                        <i class="fas fa-bars text-xl"></i>
-                    </label>
-                </div>
-                <div class="flex-1">
-                    <a class="btn btn-ghost normal-case text-xl">Tambola Admin Panel</a>
-                </div>
-                <div class="flex-none">
-                     <span class="mr-2 hidden sm:inline">Room ID: <strong x-text="roomId || 'N/A'"></strong></span>
-                    <div class="dropdown dropdown-end ml-2">
-                        <label tabindex="0" class="btn btn-ghost btn-circle indicator">
-                            <i class="fas fa-bell text-xl"></i>
-                            <template x-if="notifications.length > 0">
-                                <span class="indicator-item badge badge-secondary badge-sm" x-text="notifications.length"></span>
-                            </template>
-                        </label>
-                        <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[50] p-2 shadow bg-base-100 rounded-box w-64 sm:w-80 max-h-96 overflow-y-auto">
-                            <template x-if="notifications.length === 0">
-                                <li class="p-2 text-center text-sm text-base-content/70">No new notifications</li>
-                            </template>
-                            <template x-for="notification in notifications" :key="notification.id">
-                                <li>
-                                    <a @click="handleNotificationClick(notification)" class="whitespace-normal text-xs p-2 hover:bg-base-200">
-                                        <div class="flex flex-col w-full">
-                                            <div class="font-semibold" x-text="notification.type"></div>
-                                            <div class="text-base-content/80" x-text="notification.message"></div>
-                                            <div class="text-xs opacity-60 mt-1 self-end" x-text="new Date(notification.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })"></div>
-                                        </div>
-                                    </a>
-                                </li>
-                            </template>
-                            <template x-if="notifications.length > 0">
-                                <div class="divider my-1"></div>
-                                <li><a @click="clearAllNotifications()" class="text-xs text-center text-error p-2 hover:bg-error hover:text-error-content">Clear All</a></li>
-                            </template>
-                        </ul>
-                    </div>
-                    <div class="dropdown dropdown-end">
-                        <label tabindex="0" class="btn btn-ghost btn-circle" aria-label="Theme selector">
-                            <i class="fas fa-palette"></i>
-                        </label>
-                        <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[50] p-2 shadow bg-base-100 rounded-box w-52">
-                            <template x-for="theme in themes" :key="theme">
-                                <li><a @click="setTheme(theme, $event)" x-text="theme.charAt(0).toUpperCase() + theme.slice(1)"></a></li>
-                            </template>
-                        </ul>
-                    </div>
-                     <button @click="logoutAdmin" class="btn btn-ghost btn-circle" aria-label="Logout Admin">
-                        <i class="fas fa-sign-out-alt text-xl"></i>
-                    </button>
-                </div>
-            </nav>
-
-            <main class="flex-grow p-4 overflow-y-auto" :data-bottom-nav-visible="currentView === 'home'">
-                <div x-show="currentView === 'home'" x-transition>
-                    <h2 class="text-2xl font-bold mb-1">Game Room (<span x-text="adminName"></span>)</h2>
-                    <div class="mb-3 text-center">Status: <span class="badge badge-lg"
-                        :class="{
-                            'badge-neutral': gameStatus === 'idle' || gameStatus === 'loading' || gameStatus === 'disconnected',
-                            'badge-success': gameStatus === 'running',
-                            'badge-warning': gameStatus === 'paused',
-                            'badge-error': gameStatus === 'stopped' || gameStatus === 'error'
-                        }"
-                        x-text="gameStatus"></span>
-                    </div>
-
-                    <div class="text-center my-6" x-show="latestCalledNumber !== null">
-                        <span class="label-text">Last Called:</span>
-                        <div class="badge badge-lg badge-secondary text-2xl p-4" x-text="latestCalledNumber"></div>
-                        <div x-show="latestCalledPhrase" class="mt-1 text-sm italic text-accent" x-text="latestCalledPhrase"></div>
-                    </div>
-                    <div class="text-center my-6" x-show="latestCalledNumber === null && gameStatus === 'running'">
-                        <span class="label-text">Game started. Call the first number!</span>
-                    </div>
-                     <div class="text-center my-6" x-show="gameStatus === 'idle' || gameStatus === 'stopped'">
-                        <span class="label-text">Game is not currently running.</span>
-                    </div>
-
-                    <div class="number-grid p-2 bg-base-100 rounded-lg shadow">
-                        <template x-for="numObj in numbers" :key="numObj.number">
-                            <div class="number-cell" :class="{ 'bg-base-300': !numObj.called, 'called': numObj.called, 'latest': numObj.number === latestCalledNumber && numObj.called }" x-text="numObj.number"></div>
-                        </template>
-                    </div>
-                </div>
-
-                <div x-show="currentView === 'players'" x-transition>
-                    <h2 class="text-2xl font-bold mb-4">Players (<span x-text="players.length"></span>)</h2>
-                    <div class="overflow-x-auto bg-base-100 p-4 rounded-lg shadow">
-                        <table class="table table-zebra w-full table-sm">
-                            <thead><tr><th>Name</th><th>ID</th><th class="text-center">Tickets</th></tr></thead>
-                            <tbody>
-                                <template x-if="players.length === 0"><tr><td colspan="3" class="text-center italic py-4">No players connected yet.</td></tr></template>
-                                <template x-for="player in players" :key="player.id">
-                                    <tr>
-                                        <td x-text="player.name"></td>
-                                        <td x-text="player.id" class="text-xs"></td>
-                                        <td x-text="player.ticketCount" class="text-center"></td>
-                                    </tr>
-                                </template>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <div x-show="currentView === 'ticketRequests'" x-transition>
-                    <h2 class="text-2xl font-bold mb-4">Pending Ticket Requests (<span x-text="pendingTicketRequests.length"></span>)</h2>
-                    <div class="overflow-x-auto bg-base-100 p-4 rounded-lg shadow">
-                        <table class="table table-zebra w-full table-sm">
-                            <thead>
-                                <tr>
-                                    <th>Player Name</th>
-                                    <th class="text-center">Current Tickets</th>
-                                    <th>Timestamp</th>
-                                    <th class="text-center">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <template x-if="pendingTicketRequests.length === 0">
-                                    <tr><td colspan="4" class="text-center italic py-4">No pending ticket requests.</td></tr>
-                                </template>
-                                <template x-for="request in pendingTicketRequests" :key="request.id">
-                                    <tr>
-                                        <td>
-                                            <div class="font-bold" x-text="request.playerName"></div>
-                                            <div class="text-xs opacity-70" x-text="'ID: ' + (request.playerId || request.id).substring(0,6)"></div>
-                                        </td>
-                                        <td class="text-center" x-text="request.currentTickets || 'N/A'"></td>
-                                        <td x-text="request.requestTimestamp ? new Date(request.requestTimestamp.seconds * 1000).toLocaleString() : 'N/A'" class="text-xs"></td>
-                                        <td class="text-center">
-                                            <div class="flex flex-col sm:flex-row gap-1 justify-center items-center">
-                                                <button class="btn btn-xs btn-success w-full sm:w-auto" @click="approveTicketRequest(request.id)">Approve</button>
-                                                <button class="btn btn-xs btn-error w-full sm:w-auto mt-1 sm:mt-0" @click="rejectTicketRequest(request.id, 'Admin rejected')">Reject</button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                </template>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <div x-show="currentView === 'prizeClaims'" x-transition>
-                    <h2 class="text-2xl font-bold mb-4">Pending Prize Claims (<span x-text="pendingPrizeClaims.length"></span>)</h2>
-                    <div class="overflow-x-auto bg-base-100 p-4 rounded-lg shadow">
-                        <table class="table table-zebra w-full table-sm">
-                            <thead>
-                                <tr>
-                                    <th>Player</th>
-                                    <th>Prize Claimed</th>
-                                    <th>Ticket ID</th>
-                                    <th class="text-center">Server Valid?</th>
-                                    <th>Timestamp</th>
-                                    <th class="text-center">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <template x-if="pendingPrizeClaims.length === 0">
-                                    <tr><td colspan="6" class="text-center italic py-4">No pending prize claims.</td></tr>
-                                </template>
-                                <template x-for="claim in pendingPrizeClaims" :key="claim.id">
-                                    <tr>
-                                        <td>
-                                            <div class="font-bold" x-text="claim.playerName"></div>
-                                            <div class="text-xs opacity-70" x-text="'ID: ' + claim.playerId.substring(0,6)"></div>
-                                        </td>
-                                        <td>
-                                            <div x-text="claim.prizeName"></div>
-                                            <div class="text-xs opacity-70" x-text="'Rule: ' + claim.prizeRuleId"></div>
-                                        </td>
-                                        <td class="text-xs" x-text="claim.ticketId ? claim.ticketId.substring(0,10) + '...' : 'N/A'"></td>
-                                        <td class="text-center">
-                                            <span class="badge badge-sm"
-                                                  :class="{'badge-success': claim.serverValidationResult === true, 'badge-warning': claim.serverValidationResult === false, 'badge-ghost': claim.serverValidationResult === undefined}"
-                                                  x-text="claim.serverValidationResult === true ? 'Yes' : (claim.serverValidationResult === false ? 'No (Verify)' : 'Pending')">
-                                            </span>
-                                        </td>
-                                        <td x-text="claim.claimTimestamp ? new Date(claim.claimTimestamp.seconds * 1000).toLocaleString() : 'N/A'" class="text-xs"></td>
-                                        <td class="text-center">
-                                            <div class="flex flex-col sm:flex-row gap-1 justify-center items-center">
-                                                <button class="btn btn-xs btn-success w-full sm:w-auto" @click="approvePrizeClaim(claim)">Approve</button>
-                                                <button class="btn btn-xs btn-error w-full sm:w-auto mt-1 sm:mt-0" @click="rejectPrizeClaim(claim, 'Did not meet criteria')">Reject</button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                </template>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <div x-show="currentView === 'winners'" x-transition>
-                     <h2 class="text-2xl font-bold mb-4">Winners (<span x-text="winners.length"></span>)</h2>
-                     <div class="overflow-x-auto bg-base-100 p-4 rounded-lg shadow">
-                        <table class="table table-zebra w-full table-sm">
-                            <thead><tr><th>Player</th><th>Prize</th><th>Rule ID</th><th>Value (Coins)</th><th>Time</th></tr></thead>
-                            <tbody>
-                                <template x-if="winners.length === 0"><tr><td colspan="5" class="text-center italic py-4">No winners yet.</td></tr></template>
-                                <template x-for="winner in winners" :key="winner.claimId || winner.id">
-                                    <tr>
-                                        <td x-text="winner.playerName"></td>
-                                        <td x-text="winner.prizeName"></td>
-                                        <td x-text="winner.prizeRuleId" class="text-xs"></td>
-                                        <td x-text="(winner.coinsAwarded || winner.coins || 0).toFixed(2)"></td>
-                                        <td x-text="winner.timestamp ? (winner.timestamp.seconds ? new Date(winner.timestamp.seconds * 1000).toLocaleString() : new Date(winner.timestamp).toLocaleString()) : 'N/A'" class="text-xs"></td>
-                                    </tr>
-                                </template>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <div x-show="currentView === 'rules'" x-transition class="space-y-6">
-                     <h2 class="text-2xl font-bold mb-4">Game Rules & Prize Allocation</h2>
-                    <div class="bg-base-100 p-4 rounded-lg shadow">
-                        <p class="text-sm mb-4">
-                            Activate rules, assign their percentage share (Base Weight) of the total prize pool, and set max prizes.
-                            The sum of Base Weights for active rules will always be normalized to 100%. Value per prize is auto-calculated based on the 'Total Money Collected'.
-                        </p>
-                    </div>
-                    <template x-for="(rule, index) in gameRules" :key="rule.id">
-                        <div class="card bg-base-100 shadow-md">
-                            <div class="card-body p-4">
-                                <div class="flex items-center justify-between">
-                                    <h3 class="card-title text-lg" x-text="rule.name"></h3>
-                                    <input type="checkbox" class="toggle toggle-primary" x-model="rule.isActive" @change="handleActivationToggle(rule.id)" :disabled="gameStatus === 'running' || gameStatus === 'paused'">
-                                </div>
-                                <p class="text-xs text-base-content/70 mt-1" x-text="rule.description"></p>
-                                <div x-show="rule.isActive" class="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-                                    <div class="form-control">
-                                        <label class="label pb-1"><span class="label-text">Base Weight (%)</span></label>
-                                        <input type="number" class="input input-sm input-bordered" :value="rule.baseWeight ? rule.baseWeight.toFixed(2) : '0.00'" @input="handleBaseWeightInput(rule.id, $event.target.value)" min="0" max="100" step="0.01" :disabled="gameStatus === 'running' || gameStatus === 'paused'">
-                                    </div>
-                                    <div class="form-control">
-                                        <label class="label pb-1"><span class="label-text">Max Prizes Allowed</span></label>
-                                        <input type="number" class="input input-sm input-bordered" x-model.number="rule.maxPrizes" min="1" @input="updateRuleCalculations()" :disabled="gameStatus === 'running' || gameStatus === 'paused'">
-                                    </div>
-                                    <div class="form-control">
-                                        <label class="label pb-1"><span class="label-text">Value per Prize (Coins)</span></label>
-                                        <span class="input input-sm input-bordered flex items-center bg-base-200" x-text="rule.coinsPerPrize > 0 ? rule.coinsPerPrize.toFixed(2) : '0.00'"></span>
-                                    </div>
-                                </div>
-                                <div x-show="rule.isActive" class="mt-2 text-sm">Allocated Prize Pool Share: <span class="font-semibold" x-text="rule.baseWeight ? rule.baseWeight.toFixed(2) + '%' : '0.00%'"></span></div>
-                            </div>
-                        </div>
-                    </template>
-                    <div class="bg-base-100 p-4 rounded-lg shadow mt-6 space-y-3">
-                        <h3 class="text-xl font-semibold">Prize Allocation & Financial Summary</h3>
-                        <div class="form-control">
-                            <label class="label"><span class="label-text">Total Money Collected (e.g., Coins)</span></label>
-                            <input type="number" placeholder="Enter amount" class="input input-bordered" x-model.number="totalMoneyCollected" @input="updateRuleCalculations()" :disabled="gameStatus === 'running' || gameStatus === 'paused'">
-                        </div>
-                        <p>Total Selected Weight (Active Rules): <strong x-text="totalSelectedWeight.toFixed(0) + '%'"></strong></p>
-                        <p>Total Value of Prizes to be Distributed: <strong x-text="totalPotentialPrizeValue.toFixed(2)"></strong> Coins</p>
-                        <button class="btn btn-primary btn-sm mt-2" @click="saveRulesConfiguration" :disabled="gameStatus === 'running' || gameStatus === 'paused'">Save Rules & Financials</button>
-                         <p x-show="gameStatus === 'running' || gameStatus === 'paused'" class="text-xs text-warning">Rules and financials cannot be saved while game is in progress.</p>
-                    </div>
-                </div>
-
-                <div x-show="currentView === 'qrCode'" x-transition class="text-center p-4 bg-base-100 rounded-lg shadow">
-                    <h2 class="text-2xl font-bold mb-4">Player Join QR Code</h2>
-                    <p class="mb-2">Players can scan this QR code to join Room ID: <strong x-text="roomId"></strong></p>
-                    <div class="flex justify-center"><div id="qrcodeCanvas" class="bg-white p-4 inline-block rounded-lg shadow-lg"></div></div>
-                    <button class="btn btn-secondary mt-4" @click="generateQRCode"><i class="fas fa-sync-alt mr-2"></i>Regenerate QR Code</button>
-                </div>
-
-                <div x-show="currentView === 'gameSummary'" x-transition>
-                    <h2 class="text-2xl font-bold mb-4">Game Summary</h2>
-                    <div x-show="!gameSummaryData || Object.keys(gameSummaryData).length === 0" class="text-center italic p-4 bg-base-100 rounded-lg shadow">
-                        Game summary will be available after the game ends or if loaded from Firestore.
-                    </div>
-                    <div x-show="gameSummaryData && Object.keys(gameSummaryData).length > 0" class="bg-base-100 p-4 rounded-lg shadow space-y-3">
-                        <p>Total Numbers Called: <strong x-text="gameSummaryData.totalNumbersCalled !== undefined ? gameSummaryData.totalNumbersCalled : (calledNumbersHistory.length || 'N/A')"></strong></p>
-                        <h3 class="text-lg font-semibold mt-4 mb-2">Winners:</h3>
-                        <div class="overflow-x-auto">
-                            <table class="table table-sm table-zebra w-full">
-                                <thead><tr><th>Player</th><th>Prize</th><th>Value (Coins)</th></tr></thead>
-                                <tbody>
-                                    <template x-if="!gameSummaryData.winners || gameSummaryData.winners.length === 0"><tr><td colspan="3" class="text-center">No winners in this game.</td></tr></template>
-                                    <template x-for="winner in gameSummaryData.winners" :key="winner.claimId">
-                                        <tr>
-                                            <td x-text="winner.playerName"></td>
-                                            <td x-text="winner.prizeName"></td>
-                                            <td x-text="(winner.coinsAwarded || winner.coins || 0).toFixed(2)"></td>
-                                        </tr>
-                                    </template>
-                                </tbody>
-                            </table>
-                        </div>
-                         <h3 class="text-lg font-semibold mt-4 mb-2">Player Details (Summary):</h3>
-                         <div class="overflow-x-auto">
-                            <table class="table table-sm table-zebra w-full">
-                                <thead><tr><th>Player</th><th>Tickets</th><th>Total Value Won (Coins)</th></tr></thead>
-                                <tbody>
-                                    <template x-if="!gameSummaryData.players || gameSummaryData.players.length === 0"><tr><td colspan="3" class="text-center">No player data in summary.</td></tr></template>
-                                    <template x-for="playerSummaryItem in gameSummaryData.players" :key="playerSummaryItem.id">
-                                        <tr>
-                                            <td x-text="playerSummaryItem.name"></td>
-                                            <td x-text="playerSummaryItem.ticketCount" class="text-center"></td>
-                                            <td x-text="(playerSummaryItem.totalCoinsWon || 0).toFixed(2)"></td>
-                                        </tr>
-                                    </template>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-
-                <div x-show="gameMessage" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 transform translate-y-2" x-transition:enter-end="opacity-100 transform translate-y-0" x-transition:leave="transition ease-in duration-300" x-transition:leave-start="opacity-100 transform translate-y-0" x-transition:leave-end="opacity-0 transform translate-y-2"
-                     class="game-message-popup"
-                     :class="{ 'bg-error text-error-content': gameMessageType === 'error',
-                               'bg-warning text-warning-content': gameMessageType === 'warning',
-                               'bg-info text-info-content': gameMessageType === 'info',
-                               'bg-success text-success-content': gameMessageType === 'success' }"
-                     x-text="gameMessage">
-                </div>
-            </main>
+<body>
+    <div id="root">
         </div>
+    <div id="loading-spinner-container" style="display: none;"></div>
 
-        <div class="drawer-side z-40">
-            <label for="my-drawer" aria-label="close sidebar" class="drawer-overlay"></label>
-            <ul class="menu p-4 w-80 min-h-full bg-base-100 text-base-content">
-                <li class="mb-2 text-center"><span class="text-lg font-bold">Admin Menu</span><button @click="isDrawerOpen = false" class="btn btn-ghost btn-sm btn-circle absolute top-2 right-2 lg:hidden">✕</button></li>
-                <li><a @click="changeView('home')" :class="{ 'active': currentView === 'home' }"><i class="fas fa-dice-d20 mr-2"></i>Game Board</a></li>
-                <li><a @click="changeView('rules')" :class="{ 'active': currentView === 'rules' }"><i class="fas fa-gavel mr-2"></i>Rules & Prizes</a></li>
-                <li><a @click="changeView('players')" :class="{ 'active': currentView === 'players' }"><i class="fas fa-users mr-2"></i>Players <span x-show="players.length > 0" class="badge badge-sm" x-text="players.length"></span></a></li>
-                <li><a @click="changeView('ticketRequests')" :class="{ 'active': currentView === 'ticketRequests' }"><i class="fas fa-ticket-alt mr-2"></i>Ticket Requests <span x-show="pendingTicketRequests.length > 0" class="badge badge-sm badge-warning" x-text="pendingTicketRequests.length"></span></a></li>
-                <li><a @click="changeView('prizeClaims')" :class="{ 'active': currentView === 'prizeClaims' }"><i class="fas fa-trophy mr-2"></i>Prize Claims <span x-show="pendingPrizeClaims.length > 0" class="badge badge-sm badge-info" x-text="pendingPrizeClaims.length"></span></a></li>
-                <li><a @click="changeView('winners')" :class="{ 'active': currentView === 'winners' }"><i class="fas fa-medal mr-2"></i>Winners <span x-show="winners.length > 0" class="badge badge-sm badge-success" x-text="winners.length"></span></a></li>
-                <li><a @click="changeView('qrCode')" :class="{ 'active': currentView === 'qrCode' }"><i class="fas fa-qrcode mr-2"></i>QR Code</a></li>
-                <li><a @click="changeView('gameSummary')" :class="{ 'active': currentView === 'gameSummary' }"><i class="fas fa-clipboard-list mr-2"></i>Game Summary</a></li>
-                <li class="mt-auto"><a @click="logoutAdmin()"><i class="fas fa-sign-out-alt mr-2"></i>Logout & New Room Setup</a></li>
-            </ul>
-        </div>
-    </div>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-functions-compat.js"></script>
 
-    <div class="bottom-nav-controls-container" x-show="currentView === 'home'">
-        <div class="control-bar">
-            <div class="form-control">
-                <label class="label cursor-pointer py-1">
-                    <span class="label-text mr-1 sm:mr-2">Mode:</span>
-                    <select class="select select-bordered select-xs sm:select-sm" x-model="callingMode" :disabled="gameStatus === 'running' || gameStatus === 'paused'">
-                        <option value="manual">Manual</option>
-                        <option value="auto">Auto</option>
-                    </select>
-                </label>
-            </div>
-            <div class="form-control" x-show="callingMode === 'auto'">
-                <label class="label cursor-pointer py-1">
-                    <span class="label-text mr-1 sm:mr-2">Interval:</span>
-                    <select class="select select-bordered select-xs sm:select-sm" x-model.number="autoCallInterval" :disabled="gameStatus === 'running' || gameStatus === 'paused'">
-                        <option value="3">3s</option>
-                        <option value="5">5s</option>
-                        <option value="7">7s</option>
-                        <option value="10">10s</option>
-                         <option value="15">15s</option>
-                    </select>
-                </label>
-            </div>
-            <button class="btn btn-success btn-xs sm:btn-sm" @click="startGame" :disabled="gameStatus === 'running' || gameStatus === 'paused' || !roomId">
-                <i class="fas fa-play mr-1"></i> Start Game
-            </button>
-        </div>
-        <div class="control-bar">
-            <button class="btn btn-primary btn-xs sm:btn-sm" @click="callNextNumber" :disabled="callingMode !== 'manual' || gameStatus !== 'running' || calledNumbersHistory.length >= 90">
-                <i class="fas fa-arrow-right mr-1"></i> Call Next
-            </button>
-            <button class="btn btn-warning btn-xs sm:btn-sm" @click="pauseGame" :disabled="callingMode !== 'auto' || gameStatus !== 'running'">
-                <i class="fas fa-pause mr-1"></i> Pause Auto
-            </button>
-            <button class="btn btn-info btn-xs sm:btn-sm" @click="resumeGame" :disabled="callingMode !== 'auto' || gameStatus !== 'paused'">
-                <i class="fas fa-play-circle mr-1"></i> Resume Auto
-            </button>
-            <button class="btn btn-error btn-xs sm:btn-sm" @click="stopGame" :disabled="gameStatus === 'idle' || gameStatus === 'stopped' || gameStatus === 'loading' || gameStatus === 'error'">
-                <i class="fas fa-stop mr-1"></i> Stop Game
-            </button>
-        </div>
-    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/17.0.2/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/17.0.2/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
 
-    <script>
-      function adminRoom() {
-        console.log("adminRoom component constructor called. Initial global fbDb:", (typeof fbDb), "Initial global fbFunctions:", (typeof fbFunctions));
-        return {
-            // Core Admin Info
-            adminName: '',
-            firebaseAdminUserId: null,
-            roomId: '',
-            _firebaseReady: false, // Internal flag
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/antd/4.24.10/antd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ant-design-icons/4.8.0/icons.min.js" xintegrity="sha512-/NPat5CqG2gLfn2nkDe+6LKymfsbB9LR3T+RNB5BqZSTZ7aB6uHv9Qd2xES3lVv9j2mXWjRQzClq2Hq7Oq7S7A==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
-            // UI State
-            currentView: 'home',
-            isDrawerOpen: false,
-            themes: [ "light", "dark", "cupcake", "bumblebee", "emerald", "corporate", "synthwave", "retro", "cyberpunk", "valentine", "halloween", "garden", "forest", "aqua", "lofi", "pastel", "fantasy", "wireframe", "black", "luxury", "dracula", "cmyk", "autumn", "business", "acid", "lemonade", "night", "coffee", "winter" ],
-            notifications: [],
 
-            // Game State
-            numbers: Array.from({ length: 90 }, (_, i) => ({ number: i + 1, called: false })), 
-            calledNumbersHistory: [],
-            latestCalledNumber: null,
-            latestCalledPhrase: '', 
-            callingMode: 'manual', 
-            autoCallInterval: 5, 
-            gameStatus: 'loading',
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        const { Layout, Menu, Breadcrumb, Card, Form, Input, InputNumber, Button, Spin, message, Typography, Space, Radio, Modal, Row, Col, PageHeader, Dropdown } = antd;
+        const { Title, Text } = Typography;
+        const { SubMenu } = Menu;
+        const { UserOutlined, VideoCameraOutlined, UploadOutlined, MenuUnfoldOutlined, MenuFoldOutlined, DashboardOutlined, SettingOutlined, PlusOutlined, DeleteOutlined, LogoutOutlined, DollarCircleOutlined, ClockCircleOutlined, TrophyOutlined, TeamOutlined, BarChartOutlined, FileTextOutlined, ExperimentOutlined } = window.icons || {};
 
-            // Data Lists
-            players: [], 
-            pendingTicketRequests: [], 
-            pendingPrizeClaims: [], 
-            winners: [], 
-            gameSummaryData: {}, 
-
-            // Rules and Financials
-            gameRules: [ 
-                { id: 'rule_early5', name: 'Early 5', description: 'First five numbers called on any ticket.', baseWeight: 10, maxPrizes: 1, coinsPerPrize: 0, isActive: true, originalWeight: 10, claims: 0 },
-                { id: 'rule_topline', name: 'Top Line', description: 'All numbers in the top row.', baseWeight: 15, maxPrizes: 1, coinsPerPrize: 0, isActive: true, originalWeight: 15, claims: 0 },
-                { id: 'rule_middleline', name: 'Middle Line', description: 'All numbers in the middle row.', baseWeight: 15, maxPrizes: 1, coinsPerPrize: 0, isActive: true, originalWeight: 15, claims: 0 },
-                { id: 'rule_bottomline', name: 'Bottom Line', description: 'All numbers in the bottom row.', baseWeight: 15, maxPrizes: 1, coinsPerPrize: 0, isActive: true, originalWeight: 15, claims: 0 },
-                { id: 'rule_corners', name: 'Corners', description: 'First and last actual numbers of top and bottom rows.', baseWeight: 10, maxPrizes: 1, coinsPerPrize: 0, isActive: false, originalWeight: 10, claims: 0 },
-                { id: 'rule_fullhouse', name: 'Full House', description: 'All 15 numbers on the ticket.', baseWeight: 35, maxPrizes: 1, coinsPerPrize: 0, isActive: true, originalWeight: 35, claims: 0 },
-            ],
-            totalSelectedWeight: 0, 
-            totalPotentialPrizeValue: 0, 
-            totalMoneyCollected: 0, 
-
-            // UI Messages
-            gameMessage: '',
-            gameMessageType: 'info', 
-            gameMessageTimeout: null,
-
-            // Firestore listeners unsubscribe functions
-            roomListenerUnsubscribe: null,
-            ticketRequestsListenerUnsubscribe: null,
-            prizeClaimsListenerUnsubscribe: null,
-
-            alpineComponentInit() { 
-                console.log("adminRoom alpineComponentInit() called. Initial global fbDb:", (typeof fbDb));
-                const savedTheme = localStorage.getItem('theme') || 'light'; 
-                this.setTheme(savedTheme, null, false); 
-
-                this.adminName = localStorage.getItem('adminName') || 'Admin'; 
-                this.roomId = localStorage.getItem('roomId') || null; 
-                this.firebaseAdminUserId = localStorage.getItem('firebaseAdminUserId') || null; 
-
-                if (!this.firebaseAdminUserId || !this.roomId) { 
-                    this.showGameMessage("Admin session or Room ID missing. Redirecting...", "error", null); 
-                    setTimeout(() => { window.location.href = 'admin_join.html'; }, 2500); 
-                    return; 
-                }
-                
-                this.showGameMessage("Initializing component...", "info", null); 
-                this.initializeClientStateForNewGame(false); 
-                this.gameRules.forEach(rule => { /* ... your rule initialization logic as per previous versions ... */ });
-                this.normalizeActiveRuleWeights(); 
-                this.updateRuleCalculations(); 
-
-                if (window.firebaseServicesInitialized && typeof fbDb === 'object' && typeof fbFunctions === 'object' && typeof fbAuth === 'object') {
-                    console.log("Firebase services immediately ready in alpineComponentInit(). Setting up listeners.");
-                    this._firebaseReady = true;
-                    this.showGameMessage("Loading room data...", "info");
-                    if (this.roomId) {
-                        this.setupFirestoreListeners();
-                    }
-                } else {
-                    console.warn("Firebase services not immediately ready in alpineComponentInit. Will rely on global init completion.", {db: typeof fbDb, func: typeof fbFunctions, auth: typeof fbAuth, flag: window.firebaseServicesInitialized});
-                    this.showGameMessage("Core services initializing... Please wait.", "warning", null);
-                    this.gameStatus = 'loading'; 
-                    // Fallback: if services weren't ready (e.g., SDK script issue), this won't help much without them
-                    // For now, we assume the global init script in <head> will have set them up.
-                    // A more robust polling could be added here if the <head> script is unreliable
-                    // but with <script src="firebase-app-compat.js"></script> (non-deferred) it should be available.
-                    // We'll primarily rely on the global fbDb, fbFunctions being set by the <head> script.
-                    // If they are *still* undefined here, there's a fundamental SDK loading issue.
-                     if (this.roomId) {
-                        // Attempt to setup listeners, hoping globals are set
-                         this.setupFirestoreListeners();
-                    }
-                }
-            },
-            
-            initializeClientStateForNewGame(showMsg = true) { /* ... Your existing logic ... */ },
-
-            async _ensureFirebaseFunctionsReady() {
-                if (typeof fbFunctions !== 'object' || typeof fbFunctions.httpsCallable !== 'function') {
-                    this.showGameMessage("Functions service not ready. Please refresh.", "error", null); 
-                    console.error("Attempted to use fbFunctions but it's not valid global.", {type: typeof fbFunctions});
-                    return null; 
-                }
-                this._firebaseReady = true; // Mark as ready if we can get an instance
-                return fbFunctions;
-            },
-            async _ensureFirestoreReady() {
-                if (typeof fbDb !== 'object' || typeof fbDb.collection !== 'function') {
-                    this.showGameMessage("Firestore service not ready. Please refresh.", "error", null); 
-                    console.error("Attempted to use fbDb but it's not valid global.", {type: typeof fbDb});
-                    return null; 
-                }
-                this._firebaseReady = true; // Mark as ready
-                return fbDb;
-            },
-            async _ensureAuthReady() {
-                if (typeof fbAuth !== 'object' || typeof fbAuth.signOut !== 'function') {
-                    this.showGameMessage("Auth service not ready. Please refresh.", "error", null); 
-                    console.error("Attempted to use fbAuth but it's not valid global.", {type: typeof fbAuth});
-                    return null; 
-                }
-                this._firebaseReady = true; // Mark as ready
-                return fbAuth;
-            },
-
-            async setupFirestoreListeners() {
-                const dbInstance = await this._ensureFirestoreReady();
-                if (!dbInstance) { this.gameStatus = 'error'; console.error("setupFirestoreListeners: dbInstance is null, cannot proceed."); return; }
-                console.log("setupFirestoreListeners executing with dbInstance:", typeof dbInstance);
-                if (!this.roomId || !this.firebaseAdminUserId) { /* ... */ return; }
-
-                const roomRef = dbInstance.collection('rooms').doc(this.roomId); 
-                if (this.roomListenerUnsubscribe) { this.roomListenerUnsubscribe(); }
-                this.roomListenerUnsubscribe = roomRef.onSnapshot(doc => { 
-                    if (doc.exists) { 
-                        const roomData = doc.data(); 
-                        this.gameStatus = roomData.gameStatus || 'idle'; 
-                        this.callingMode = roomData.callingMode || 'manual'; 
-                        this.autoCallInterval = roomData.autoCallInterval || 5;
-                        this.calledNumbersHistory = roomData.currentNumbersCalled || []; 
-                        this.latestCalledNumber = roomData.currentLatestCalledNumber || null; 
-                        this.latestCalledPhrase = roomData.latestCalledPhrase || ''; 
-                        this.numbers.forEach(n => n.called = false); 
-                        this.calledNumbersHistory.forEach(calledNum => { 
-                            const numObj = this.numbers.find(n => n.number === calledNum); 
-                            if (numObj) numObj.called = true; 
-                        });
-                        if (roomData.rules) { 
-                            this.gameRules = roomData.rules.map(r => ({ ...r, isActive: !!r.isActive, originalWeight: r.originalWeight !== undefined ? r.originalWeight : (r.baseWeight !== undefined ? r.baseWeight : (!!r.isActive ? 10 : 0)), baseWeight: r.baseWeight !== undefined ? r.baseWeight : (!!r.isActive ? 10 : 0), maxPrizes: parseInt(r.maxPrizes) || 1, coinsPerPrize: parseFloat(r.coinsPerPrize) || 0, claims: parseInt(r.claims) || 0 }));
-                        }
-                        this.totalMoneyCollected = parseFloat(roomData.totalMoneyCollected) || 0; 
-                        this.normalizeActiveRuleWeights(); this.updateRuleCalculations(); 
-                        this.players = roomData.currentActivePlayers ? Object.entries(roomData.currentActivePlayers).map(([uid, playerData]) => ({ id: uid, name: playerData.playerName, ticketCount: playerData.ticketCount || 0 })) : []; 
-                        this.winners = roomData.currentWinners || []; this.gameSummaryData = roomData.gameSummary || {}; 
-                        if(this.gameMessage.includes("Initializing") || this.gameMessage.includes("Loading")){ this.showGameMessage("Room data loaded!", "success", 2000); }
-                    } else { this.showGameMessage(`Room ${this.roomId} not found.`, "error", null); this.gameStatus = 'error'; }
-                }, error => { console.error("Error listening to room:", error); this.showGameMessage("Error syncing room data.", "error"); this.gameStatus = 'error'; });
-
-                const ticketRequestsRef = dbInstance.collection('rooms').doc(this.roomId).collection('ticketRequests').where('status', '==', 'pending').orderBy('requestTimestamp', 'desc');
-                if (this.ticketRequestsListenerUnsubscribe) this.ticketRequestsListenerUnsubscribe();
-                this.ticketRequestsListenerUnsubscribe = ticketRequestsRef.onSnapshot(snapshot => { /* ... */ });
-
-                const prizeClaimsRef = dbInstance.collection('prizeClaimsAudit').where('roomId', '==', this.roomId).where('status', '==', 'pending_admin_approval').orderBy('claimTimestamp', 'desc');
-                if (this.prizeClaimsListenerUnsubscribe) this.prizeClaimsListenerUnsubscribe();
-                this.prizeClaimsListenerUnsubscribe = prizeClaimsRef.onSnapshot(snapshot => { /* ... */});
-            },
-
-            addNotification(type, message, targetView = null, relatedId = null) { /* ... */ },
-            handleNotificationClick(notification) { /* ... */ },
-            clearAllNotifications() { /* ... */ },
-
-            async startGame() {
-                const functionsInstance = await this._ensureFirebaseFunctionsReady();
-                if (!functionsInstance) return;
-                this.showGameMessage("Attempting to start game...", "info");
-                if (this.gameStatus === 'running' || this.gameStatus === 'paused') { /* ... */ return; }
-                // ... (rest of validation) ...
-                try {
-                    const startGameFunctionCallable = functionsInstance.httpsCallable('startGame');
-                    await startGameFunctionCallable({ /* payload */ });
-                } catch (error) { console.error("Error 'startGame' CF:", error); this.showGameMessage(`Start game failed: ${error.message}`, "error");}
-            },
-            async callNextNumber() {
-                const functionsInstance = await this._ensureFirebaseFunctionsReady();
-                if (!functionsInstance) return;
-                 // ... (rest of validation) ...
-                try {
-                    const callNumberFunctionCallable = functionsInstance.httpsCallable('callNextNumber');
-                    await callNumberFunctionCallable({ roomId: this.roomId });
-                } catch (error) { console.error("Error 'callNextNumber' CF:", error); this.showGameMessage(`Call number failed: ${error.message}`, "error");}
-            },
-            async updateGameStatusInFirestore(newStatus) {
-                const dbInstance = await this._ensureFirestoreReady();
-                if (!dbInstance) return;
-                // ... (rest of validation) ...
-                try {
-                    await dbInstance.collection('rooms').doc(this.roomId).update({ gameStatus: newStatus });
-                } catch (error) { console.error(`Error setting game status to ${newStatus}:`, error); this.showGameMessage(`Set status failed: ${error.message}`, "error");}
-            },
-            pauseGame() { if (this.callingMode === 'auto' && this.gameStatus === 'running') this.updateGameStatusInFirestore('paused'); },
-            resumeGame() { if (this.callingMode === 'auto' && this.gameStatus === 'paused') this.updateGameStatusInFirestore('running'); },
-            stopGame() { if (this.gameStatus === 'running' || this.gameStatus === 'paused') this.updateGameStatusInFirestore('stopped'); },
-
-            async processTicketRequestAction(requestId, action, reason = null) {
-                const functionsInstance = await this._ensureFirebaseFunctionsReady();
-                if (!functionsInstance) return;
-                 // ... (rest of logic) ...
-            },
-            approveTicketRequest(requestId) { this.processTicketRequestAction(requestId, 'approve'); },
-            rejectTicketRequest(requestId, reason = "Admin rejected") { this.processTicketRequestAction(requestId, 'reject', reason); },
-            
-            async processPrizeClaimAction(claim, action, reason = null) {
-                const functionsInstance = await this._ensureFirebaseFunctionsReady();
-                if (!functionsInstance) return;
-                 // ... (rest of logic) ...
-            },
-            approvePrizeClaim(claim) { this.processPrizeClaimAction(claim, 'approve'); },
-            rejectPrizeClaim(claim, reason = "Did not meet criteria") { this.processPrizeClaimAction(claim, 'reject', reason); },
-            
-            handleActivationToggle(ruleId) { /* ... Your existing logic ... */ },
-            handleBaseWeightInput(ruleId, inputValue) { /* ... Your existing logic ... */ },
-            normalizeActiveRuleWeights(editedRuleId = null, newWeightForEditedRule = null) { /* ... Your existing logic ... */ },
-            updateRuleCalculations() { /* ... Your existing logic ... */ },
-
-            async saveRulesConfiguration() {
-                const dbInstance = await this._ensureFirestoreReady();
-                if (!dbInstance) return;
-                 // ... (rest of logic) ...
-            },
-
-            setTheme(themeName, event = null, closeDropdown = true) { /* ... Your existing logic ... */ },
-            changeView(viewName) { /* ... Your existing logic ... */ },
-            showGameMessage(text, type = 'info', duration = 3500) { /* ... Your existing logic ... */ },
-            generateQRCode() { /* ... Your existing logic ... */ },
-            
-            async logoutAdmin() {
-                const authInstance = await this._ensureAuthReady();
-                if (!authInstance) { /* fallback logout */ return; }
-                // ... (rest of your logoutAdmin logic using authInstance.signOut) ...
-            }
+        // --- Firebase Configuration ---
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_AUTH_DOMAIN",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_STORAGE_BUCKET",
+            messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+            appId: "YOUR_APP_ID"
         };
-      }
+
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const auth = firebase.auth();
+        const functions = firebase.functions();
+
+        const App = () => {
+            const [loading, setLoading] = useState(true);
+            const [uiLoading, setUiLoading] = useState(false);
+            const [user, setUser] = useState(null);
+            const [collapsed, setCollapsed] = useState(false);
+            const [form] = Form.useForm();
+
+            useEffect(() => {
+                const unsubscribe = auth.onAuthStateChanged((currentUser) => {
+                    if (currentUser) {
+                        setUser(currentUser);
+                    } else {
+                        // Not signed in, redirect to admin join page
+                        window.location.href = 'admin_join.html'; // Relative path
+                    }
+                    setLoading(false);
+                });
+                return () => unsubscribe();
+            }, []);
+
+            const handleSignOut = async () => {
+                setUiLoading(true);
+                try {
+                    await auth.signOut();
+                    // User will be redirected by onAuthStateChanged
+                } catch (error) {
+                    message.error(`Sign out failed: ${error.message}`);
+                }
+                setUiLoading(false);
+            };
+
+            const onFinishCreateRoom = async (values) => {
+                setUiLoading(true);
+                message.loading({ content: 'Creating room...', key: 'createRoom' });
+                console.log('Form values for room creation:', values);
+
+                const formattedRules = (values.rules || []).map((rule, index) => ({
+                    id: `rule_${Date.now()}_${index}`,
+                    name: rule.name,
+                    description: rule.description || '',
+                    coinsPerPrize: rule.prizeType === 'fixed' ? (rule.prizeAmount || 0) : 0,
+                    percentageOfTotal: rule.prizeType === 'percentage' ? (rule.prizePercentage || 0) : 0,
+                    maxPrizes: rule.maxWinners || 1,
+                    isActive: true,
+                }));
+
+                const roomData = {
+                    adminDisplayName: values.adminDisplayName,
+                    ticketPrice: values.ticketPrice,
+                    autoCallInterval: values.autoCallInterval,
+                    rules: formattedRules
+                };
+
+                try {
+                    const createGameRoom = functions.httpsCallable('createGameRoom');
+                    const result = await createGameRoom(roomData);
+                    message.success({ content: `Room created successfully! Room ID: ${result.data.roomId}`, key: 'createRoom', duration: 5 });
+                    form.resetFields();
+                } catch (error) {
+                    console.error("Error creating game room:", error);
+                    message.error({ content: `Failed to create room: ${error.message}`, key: 'createRoom', duration: 5 });
+                }
+                setUiLoading(false);
+            };
+
+
+            if (loading) {
+                document.getElementById('loading-spinner-container').style.display = 'flex';
+                ReactDOM.render(<Spin size="large" tip="Loading Admin Portal..." />, document.getElementById('loading-spinner-container'));
+                return null;
+            } else {
+                 document.getElementById('loading-spinner-container').style.display = 'none';
+            }
+
+            if (!user) {
+                return <div style={{textAlign: 'center', marginTop: '50px'}}><Title level={3}>Redirecting to sign-in...</Title><Spin/></div>;
+            }
+
+            const userMenu = (
+                <Menu>
+                    <Menu.Item key="profile" icon={UserOutlined && <UserOutlined />}>
+                        Profile (Coming Soon)
+                    </Menu.Item>
+                    <Menu.Item key="signOut" onClick={handleSignOut} danger icon={LogoutOutlined && <LogoutOutlined />}>
+                        Sign Out
+                    </Menu.Item>
+                </Menu>
+            );
+
+
+            return (
+                <Layout className="admin-layout" style={{ minHeight: '100vh' }}>
+                    <Layout.Header>
+                        <div className="header-logo">Tambola Admin</div>
+                        <div className="header-right-menu">
+                            <Text style={{color: 'white', marginRight: '16px'}}>Welcome, {user.email ? user.email.split('@')[0] : 'Admin'}</Text>
+                            <Dropdown overlay={userMenu} placement="bottomRight">
+                                <Button type="text" style={{color: 'white'}} icon={UserOutlined && <UserOutlined />} />
+                            </Dropdown>
+                        </div>
+                    </Layout.Header>
+                    <Layout>
+                        <Layout.Sider
+                            collapsible
+                            collapsed={collapsed}
+                            onCollapse={(value) => setCollapsed(value)}
+                            breakpoint="lg"
+                            collapsedWidth="80"
+                            theme="dark"
+                            style={{
+                                overflow: 'auto',
+                                height: '100vh',
+                                position: 'fixed',
+                                left: 0,
+                                top: '64px',
+                                bottom: 0,
+                                zIndex: 998,
+                            }}
+                        >
+                            <Menu theme="dark" defaultSelectedKeys={['createRoom']} mode="inline">
+                                <Menu.Item key="dashboard" icon={DashboardOutlined && <DashboardOutlined />}>
+                                    Dashboard
+                                </Menu.Item>
+                                <Menu.Item key="createRoom" icon={PlusOutlined && <PlusOutlined />}>
+                                    Create Room
+                                </Menu.Item>
+                                <Menu.Item key="manageRooms" icon={SettingOutlined && <SettingOutlined />}>
+                                    Manage Rooms
+                                </Menu.Item>
+                                <SubMenu key="gameplay" icon={TrophyOutlined && <TrophyOutlined />} title="Gameplay">
+                                    <Menu.Item key="activeGames">Active Games</Menu.Item>
+                                    <Menu.Item key="pastGames">Past Games</Menu.Item>
+                                </SubMenu>
+                                <Menu.Item key="players" icon={TeamOutlined && <TeamOutlined />}>
+                                    Players
+                                </Menu.Item>
+                                <Menu.Item key="reports" icon={BarChartOutlined && <BarChartOutlined />}>
+                                    Reports
+                                </Menu.Item>
+                                <Menu.Item key="settings" icon={SettingOutlined && <SettingOutlined />}>
+                                    Settings
+                                </Menu.Item>
+                            </Menu>
+                        </Layout.Sider>
+                        <Layout className={collapsed ? "content-collapsed" : "content-expanded"} style={{ background: '#f0f2f5' }}>
+                             <Layout.Content style={{ margin: '88px 16px 70px', padding: 24, background: '#fff', minHeight: 280 }}>
+                                <PageHeader
+                                    ghost={false}
+                                    title="Create New Tambola Game Room"
+                                    subTitle="Configure and launch a new game session."
+                                />
+                                <Card bordered={false}>
+                                    <Form
+                                        form={form}
+                                        layout="vertical"
+                                        onFinish={onFinishCreateRoom}
+                                        initialValues={{
+                                            rules: [{ name: '', description: '', prizeType: 'fixed', prizeAmount: 10, prizePercentage: 10, maxWinners: 1 }],
+                                            ticketPrice: 10,
+                                            autoCallInterval: 7
+                                        }}
+                                    >
+                                        <Title level={4} className="form-section-title">Basic Room Setup</Title>
+                                        <Row gutter={16}>
+                                            <Col xs={24} sm={12}>
+                                                <Form.Item
+                                                    name="adminDisplayName"
+                                                    label="Your Admin Display Name"
+                                                    rules={[{ required: true, message: 'Please enter your display name for this room!' }]}
+                                                >
+                                                    <Input placeholder="e.g., Game Master Joe" />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col xs={24} sm={12}>
+                                                <Form.Item
+                                                    name="ticketPrice"
+                                                    label="Ticket Price (Coins/Amount)"
+                                                    rules={[{ required: true, type: 'number', min: 0, message: 'Please enter a valid ticket price!' }]}
+                                                >
+                                                    <InputNumber style={{ width: '100%' }} placeholder="e.g., 10" addonAfter={DollarCircleOutlined && <DollarCircleOutlined />} />
+                                                </Form.Item>
+                                            </Col>
+                                        </Row>
+                                        <Form.Item
+                                            name="autoCallInterval"
+                                            label="Auto-Call Interval (seconds)"
+                                            rules={[{ required: true, type: 'number', min: 3, max: 60, message: 'Enter interval (3-60s)' }]}
+                                        >
+                                            <InputNumber style={{ width: '100%' }} placeholder="e.g., 7" addonAfter={ClockCircleOutlined && <ClockCircleOutlined />} />
+                                        </Form.Item>
+
+                                        <Title level={4} className="form-section-title" style={{marginTop: '30px'}}>Game Rules & Prizes</Title>
+                                        <Form.List name="rules">
+                                            {(fields, { add, remove }) => (
+                                                <React.Fragment>
+                                                    {fields.map(({ key, name, ...restField }) => (
+                                                        <Card key={key} className="rule-item-card" bordered={true} style={{marginBottom: 16}}>
+                                                            <Row gutter={16} align="middle">
+                                                                <Col flex="auto">
+                                                                    <Title level={5}>Rule #{name + 1}</Title>
+                                                                </Col>
+                                                                <Col>
+                                                                    <Button danger type="dashed" onClick={() => remove(name)} icon={DeleteOutlined && <DeleteOutlined />} />
+                                                                </Col>
+                                                            </Row>
+                                                            <Form.Item
+                                                                {...restField}
+                                                                name={[name, 'name']}
+                                                                label="Rule Name"
+                                                                rules={[{ required: true, message: 'Missing rule name' }]}
+                                                            >
+                                                                <Input placeholder="e.g., Full House, Early Five" />
+                                                            </Form.Item>
+                                                            <Form.Item
+                                                                {...restField}
+                                                                name={[name, 'description']}
+                                                                label="Description (Optional)"
+                                                            >
+                                                                <Input.TextArea placeholder="Brief description of the rule" rows={2}/>
+                                                            </Form.Item>
+                                                            <Form.Item
+                                                                {...restField}
+                                                                name={[name, 'prizeType']}
+                                                                label="Prize Type"
+                                                                initialValue="fixed"
+                                                            >
+                                                                <Radio.Group>
+                                                                    <Radio value="fixed">Fixed Amount</Radio>
+                                                                    <Radio value="percentage">Percentage of Total Pot</Radio>
+                                                                </Radio.Group>
+                                                            </Form.Item>
+                                                            <Form.Item
+                                                                noStyle
+                                                                shouldUpdate={(prevValues, currentValues) => {
+                                                                    const prevRule = prevValues.rules && prevValues.rules[name];
+                                                                    const currentRule = currentValues.rules && currentValues.rules[name];
+                                                                    const prevPrizeType = prevRule && prevRule.prizeType;
+                                                                    const currentPrizeType = currentRule && currentRule.prizeType;
+                                                                    return prevPrizeType !== currentPrizeType;
+                                                                }}
+                                                            >
+                                                                {({ getFieldValue }) =>
+                                                                    getFieldValue(['rules', name, 'prizeType']) === 'fixed' ? (
+                                                                        <Form.Item
+                                                                            {...restField}
+                                                                            name={[name, 'prizeAmount']}
+                                                                            label="Prize Amount (Coins)"
+                                                                            rules={[{ required: true, type: 'number', min:0, message: 'Missing prize amount' }]}
+                                                                        >
+                                                                            <InputNumber style={{ width: '100%' }} placeholder="e.g., 100" />
+                                                                        </Form.Item>
+                                                                    ) : getFieldValue(['rules', name, 'prizeType']) === 'percentage' ? (
+                                                                        <Form.Item
+                                                                            {...restField}
+                                                                            name={[name, 'prizePercentage']}
+                                                                            label="Prize Percentage (%)"
+                                                                            rules={[{ required: true, type: 'number', min:1, max:100, message: 'Percentage (1-100)' }]}
+                                                                        >
+                                                                            <InputNumber style={{ width: '100%' }} placeholder="e.g., 50 for 50%" />
+                                                                        </Form.Item>
+                                                                    ) : null
+                                                                }
+                                                            </Form.Item>
+                                                            <Form.Item
+                                                                {...restField}
+                                                                name={[name, 'maxWinners']}
+                                                                label="Max Winners for this Prize"
+                                                                rules={[{ required: true, type: 'number', min:1, message: 'Min 1 winner' }]}
+                                                            >
+                                                                <InputNumber style={{ width: '100%' }} placeholder="e.g., 1" />
+                                                            </Form.Item>
+                                                        </Card>
+                                                    ))}
+                                                    <Form.Item>
+                                                        <Button type="dashed" onClick={() => add({ name: '', description: '', prizeType: 'fixed', prizeAmount: 10, prizePercentage:10, maxWinners: 1 })} block icon={PlusOutlined && <PlusOutlined />}>
+                                                            Add Rule
+                                                        </Button>
+                                                    </Form.Item>
+                                                </React.Fragment>
+                                            )}
+                                        </Form.List>
+
+                                        <Form.Item style={{marginTop: '30px'}}>
+                                            <Button type="primary" htmlType="submit" loading={uiLoading} size="large" block icon={ExperimentOutlined && <ExperimentOutlined />}>
+                                                Create Game Room
+                                            </Button>
+                                        </Form.Item>
+                                    </Form>
+                                </Card>
+                            </Layout.Content>
+                            <Layout.Footer>
+                                Tambola Game Admin Panel ©{new Date().getFullYear()} Created with Ant Design
+                            </Layout.Footer>
+                        </Layout>
+                    </Layout>
+                </Layout>
+            );
+        };
+
+        ReactDOM.render(<App />, document.getElementById('root'));
     </script>
 </body>
 </html>
