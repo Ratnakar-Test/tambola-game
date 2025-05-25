@@ -3,7 +3,7 @@ name: Deploy to Firebase
 on:
   push:
     branches:
-      - main # Or your default branch
+      - main 
 
 jobs:
   deploy_firebase:
@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: 'read'
-      id-token: 'write' # Required for Workload Identity Federation
+      id-token: 'write' 
 
     steps:
       - name: Checkout Repository
@@ -20,25 +20,20 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18' # Match your functions/package.json engine
+          node-version: '18' 
 
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
 
-      # Authenticate to Google Cloud using Workload Identity Federation
+      
       - name: Authenticate to Google Cloud
         id: auth
         uses: 'google-github-actions/auth@v2'
         with:
-          workload_identity_provider: '${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}' # e.g., projects/123456789/locations/global/workloadIdentityPools/my-pool/providers/my-provider
-          service_account: '${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}' # e.g., my-service-account@my-project.iam.gserviceaccount.com
+          workload_identity_provider: '${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}'
+          service_account: '${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}'
 
-      # Deploy to Firebase
-      # The project ID will be picked up from .firebaserc or you can specify with --project
+   
       - name: Deploy to Firebase
         run: |
           firebase deploy --only functions,hosting --project ${{ secrets.FIREBASE_PROJECT_ID }} --force
-        env:
-          FIREBASE_TOKEN: ${{ steps.auth.outputs.access_token }} # Using access token from WIF for short-lived auth
-          # Alternatively, if not using WIF and using a long-lived service account key directly (less secure):
-          # GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GCP_SA_KEY_PATH }} # if you write the SA key to a file
