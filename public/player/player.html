@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Player - Tambola Game</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@latest/dist/full.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="../common/css/style.css" rel="stylesheet" type="text/css" />
+    <link href="player.css" rel="stylesheet" type="text/css" /> <script>
+      document.documentElement.setAttribute('data-theme', localStorage.getItem('theme') || 'light');
+    </script>
+</head>
+<body class="bg-base-200 p-4">
+    <div class="container mx-auto">
+        <header class="navbar bg-base-100 rounded-box shadow-lg mb-6">
+            <div class="flex-1">
+                <a href="../index.html" class="btn btn-ghost normal-case text-xl">Tambola Player</a>
+            </div>
+            <div class="flex-none">
+                <span id="userStatus" class="mr-4">Loading user...</span>
+                <input type="email" id="emailInput" placeholder="Enter your email" class="input input-bordered input-sm mr-2"/>
+                <button id="sendLinkButton" class="btn btn-sm btn-outline btn-primary mr-2">Login</button>
+                <button id="signOutButton" class="btn btn-sm btn-outline" style="display:none;">Sign Out</button>
+            </div>
+        </header>
+
+        <div id="playerContent" class="hidden">
+            <h1 class="text-2xl font-bold mb-2">Welcome, <span id="playerNameDisplay" class="font-semibold">Player</span>!</h1>
+            <p class="mb-4">Current Room ID: <span id="playerRoomIdDisplay" class="font-bold">Not Joined</span></p>
+
+            <div class="form-control my-4">
+                <label class="label cursor-pointer">
+                    <span class="label-text">Dark Mode</span>
+                    <input type="checkbox" id="themeTogglePlayer" class="toggle toggle-primary"/>
+                </label>
+            </div>
+
+            <div id="joinRoomSection" class="card bg-base-100 shadow-md mb-6">
+                <div class="card-body">
+                    <h2 class="card-title">Join Game Room</h2>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Your Display Name</span></label>
+                        <input type="text" id="inputPlayerDisplayName" placeholder="Enter your name" class="input input-bordered" />
+                    </div>
+                    <div class="form-control mt-2">
+                        <label class="label"><span class="label-text">Room ID</span></label>
+                        <input type="text" id="inputPlayerRoomId" placeholder="Enter Room ID from Admin" class="input input-bordered" />
+                    </div>
+                    <button id="btnJoinRoomPlayer" class="btn btn-primary mt-4">Join Room</button>
+                </div>
+            </div>
+
+            <div id="gameArea" class="hidden">
+                <div class="grid md:grid-cols-3 gap-6">
+                    <div class="md:col-span-2 card bg-base-100 shadow-md">
+                        <div class="card-body">
+                            <h2 class="card-title">Your Tambola Tickets</h2>
+                            <button id="btnRequestTicket" class="btn btn-secondary btn-sm mb-4">Request Ticket</button>
+                            <p id="ticketStatusMessage" class="text-sm mb-2"></p>
+                            <div id="playerTicketsContainer" class="space-y-6">
+                                </div>
+                            <div class="mt-4">
+                                <label class="label cursor-pointer">
+                                  <span class="label-text">Auto-mark numbers on ticket</span>
+                                  <input type="checkbox" id="autoMarkToggle" class="toggle toggle-accent" checked />
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="md:col-span-1 space-y-6">
+                        <div class="card bg-base-100 shadow-md">
+                            <div class="card-body">
+                                <h2 class="card-title">Game Info</h2>
+                                <p><strong>Status:</strong> <span id="gameStatusDisplay" class="font-semibold">Idle</span></p>
+                                <p><strong>Latest Called Number:</strong></p>
+                                <div id="latestCalledNumberDisplayPlayer" class="text-4xl font-bold text-center p-3 my-2 bg-neutral text-neutral-content rounded-md">--</div>
+                                <h3 class="font-semibold mt-3">Called Numbers Board:</h3>
+                                <div id="calledNumbersBoardPlayer" class="called-numbers-board text-xs">
+                                    </div>
+                            </div>
+                        </div>
+
+                        <div class="card bg-base-100 shadow-md">
+                            <div class="card-body">
+                                <h2 class="card-title">Active Game Rules & Claims</h2>
+                                <div id="activeGameRulesPlayer" class="text-sm mb-3">
+                                    </div>
+                                <h3 class="font-semibold">Claim a Prize:</h3>
+                                <div id="prizeClaimOptions">
+                                    </div>
+                                <div id="myClaimsStatus" class="mt-3 text-sm">
+                                    <h4 class="font-semibold">My Recent Claims:</h4>
+                                    <ul id="myClaimsListPlayer"></ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card bg-base-100 shadow-md">
+                            <div class="card-body">
+                                <h2 class="card-title">Players in Room</h2>
+                                <ul id="otherPlayersList" class="list-disc list-inside text-sm">
+                                    </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="authFlowMessagePlayer" class="text-center p-5">
+            <p>Please sign in to join a game.</p>
+        </div>
+    </div>
+
+    <footer class="footer footer-center p-4 text-base-content mt-auto">
+        <div>
+            <p>Player Interface &copy; <script>document.write(new Date().getFullYear())</script></p>
+        </div>
+    </footer>
+
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-functions.js"></script>
+
+    <script src="../common/js/firebase-config.js"></script>
+    <script src="../common/js/auth.js"></script>
+    <script src="../common/js/utils.js"></script>
+    <script src="../common/js/ui.js"></script>
+    <script src="player.js"></script>
+</body>
+</html>
