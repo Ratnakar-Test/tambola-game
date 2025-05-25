@@ -10,18 +10,21 @@ const db = admin.firestore();
 const cors = require('cors')({origin: true}); // Initialize CORS middleware
 
 // --- Helper Functions ---
-// (generateRoomId, generateTambolaTicket, validatePrizePattern - These are from your file)
-// For brevity, I am not re-listing the full helper functions here.
-// Please ensure your actual helper functions (generateRoomId, generateTambolaTicket, validatePrizePattern)
-// are present in this section of your functions/index.js file.
 
+/**
+ * Generates a unique Room ID.
+ */
 function generateRoomId() {
   return Math.random().toString().slice(2, 8);
 }
 
+/**
+ * Generates a valid Tambola ticket (3x9 grid, 15 numbers).
+ */
 function generateTambolaTicket() {
   let ticket = Array(3).fill(null).map(() => Array(9).fill(null));
   let numbers = new Set(); 
+
   const getRandomNumForCol = (colIndex) => {
     const min = colIndex * 10 + (colIndex === 8 ? 0 : 1); 
     const max = colIndex * 10 + (colIndex === 8 ? 10 : 9); 
@@ -34,6 +37,7 @@ function generateTambolaTicket() {
     if (numbers.has(num)) return null; 
     return num;
   };
+
   for (let j = 0; j < 9; j++) {
     const rowIndex = Math.floor(Math.random() * 3);
     let num = getRandomNumForCol(j);
@@ -50,16 +54,19 @@ function generateTambolaTicket() {
       }
     }
   }
+
   for (let i = 0; i < 3; i++) {
     let numsInRow = ticket[i].filter(n => n !== null).length;
     let availableCols = [];
     for(let k=0; k<9; k++) availableCols.push(k); 
     availableCols.sort(() => 0.5 - Math.random());
+
     while (numsInRow < 5 && availableCols.length > 0) {
       const colIndex = availableCols.pop(); 
       if (ticket[i][colIndex] === null) { 
         let numsInCol = 0;
         for(let r=0; r<3; r++) if(ticket[r][colIndex] !== null) numsInCol++;
+
         if (numsInCol < 2) { 
           let num = getRandomNumForCol(colIndex);
           if (num) {
@@ -71,8 +78,10 @@ function generateTambolaTicket() {
       }
     }
   }
+
   let totalNumbers = 0;
   ticket.forEach(row => row.forEach(n => { if (n) totalNumbers++; }));
+
   if (totalNumbers !== 15) {
       logger.error("Ticket generation failed: Did not produce 15 numbers. Generated:", totalNumbers, ticket);
   }
@@ -81,6 +90,7 @@ function generateTambolaTicket() {
           logger.warn(`Row ${i} does not have 5 numbers. This indicates an issue with generation logic.`);
       }
   }
+
   for (let j = 0; j < 9; j++) {
     let colNumbers = [];
     for (let i = 0; i < 3; i++) {
@@ -102,52 +112,111 @@ function generateTambolaTicket() {
 
 function validatePrizePattern(ticketNumbers, claimedNumbersOnTicket, gameCalledNumbers, rule) {
   logger.info("Validating prize:", rule.name, "Player Claimed Nums:", claimedNumbersOnTicket, "Game Called Nums:", gameCalledNumbers);
+
   const allClaimedAreCalled = claimedNumbersOnTicket.every(num => gameCalledNumbers.includes(num));
   if (!allClaimedAreCalled) {
     logger.warn("Validation failed: Not all numbers claimed by player were actually called in the game.");
     return false;
   }
+
   const ticketFlatNumbers = ticketNumbers.flat().filter(n => n !== null);
   const allClaimedAreOnTicket = claimedNumbersOnTicket.every(num => ticketFlatNumbers.includes(num));
   if (!allClaimedAreOnTicket) {
     logger.warn("Validation failed: Not all numbers claimed by player exist on their ticket.");
     return false;
   }
+
   const ruleId = rule.id ? rule.id.toLowerCase() : rule.name.toLowerCase();
+
   switch (ruleId) {
-    case 'earlyfive': case 'early five': case 'early_five':
-      if (claimedNumbersOnTicket.length < 5) { logger.warn("Early Five validation failed: Less than 5 numbers claimed."); return false; }
-      logger.info("Early Five validation: Passed."); return true;
-    case 'line1': case 'line 1': case 'first line': case 'topline': case 'top line':
+    case 'earlyfive': 
+    case 'early five':
+    case 'early_five':
+      if (claimedNumbersOnTicket.length < 5) {
+        logger.warn("Early Five validation failed: Less than 5 numbers claimed.");
+        return false;
+      }
+      logger.info("Early Five validation: Passed.");
+      return true;
+
+    case 'line1':
+    case 'line 1':
+    case 'first line':
+    case 'topline':
+    case 'top line':
       const line1Numbers = ticketNumbers[0].filter(n => n !== null);
-      if (line1Numbers.length !== 5) { logger.warn("Line 1 validation warning: Ticket row 0 does not have 5 numbers."); return false; }
+      if (line1Numbers.length !== 5) { 
+          logger.warn("Line 1 validation warning: Ticket row 0 does not have 5 numbers.");
+          return false; 
+      }
       const line1Claimed = line1Numbers.every(num => claimedNumbersOnTicket.includes(num));
-      if (!line1Claimed) logger.warn("Line 1 validation failed: Not all numbers from line 1 are in player's claim."); else logger.info("Line 1 validation: Passed."); return line1Claimed;
-    case 'line2': case 'line 2': case 'second line': case 'middleline': case 'middle line':
+      if (!line1Claimed) logger.warn("Line 1 validation failed: Not all numbers from line 1 are in player's claim.");
+      else logger.info("Line 1 validation: Passed.");
+      return line1Claimed;
+
+    case 'line2':
+    case 'line 2':
+    case 'second line':
+    case 'middleline':
+    case 'middle line':
       const line2Numbers = ticketNumbers[1].filter(n => n !== null);
-      if (line2Numbers.length !== 5) { logger.warn("Line 2 validation warning: Ticket row 1 does not have 5 numbers."); return false; }
+      if (line2Numbers.length !== 5) {
+          logger.warn("Line 2 validation warning: Ticket row 1 does not have 5 numbers.");
+          return false;
+      }
       const line2Claimed = line2Numbers.every(num => claimedNumbersOnTicket.includes(num));
-      if (!line2Claimed) logger.warn("Line 2 validation failed: Not all numbers from line 2 are in player's claim."); else logger.info("Line 2 validation: Passed."); return line2Claimed;
-    case 'line3': case 'line 3': case 'third line': case 'bottomline': case 'bottom line':
+      if (!line2Claimed) logger.warn("Line 2 validation failed: Not all numbers from line 2 are in player's claim.");
+      else logger.info("Line 2 validation: Passed.");
+      return line2Claimed;
+
+    case 'line3':
+    case 'line 3':
+    case 'third line':
+    case 'bottomline':
+    case 'bottom line':
       const line3Numbers = ticketNumbers[2].filter(n => n !== null);
-      if (line3Numbers.length !== 5) { logger.warn("Line 3 validation warning: Ticket row 2 does not have 5 numbers."); return false; }
+      if (line3Numbers.length !== 5) {
+          logger.warn("Line 3 validation warning: Ticket row 2 does not have 5 numbers.");
+          return false;
+      }
       const line3Claimed = line3Numbers.every(num => claimedNumbersOnTicket.includes(num));
-      if (!line3Claimed) logger.warn("Line 3 validation failed: Not all numbers from line 3 are in player's claim."); else logger.info("Line 3 validation: Passed."); return line3Claimed;
-    case 'corners': case 'fourcorners': case 'four corners':
+      if (!line3Claimed) logger.warn("Line 3 validation failed: Not all numbers from line 3 are in player's claim.");
+      else logger.info("Line 3 validation: Passed.");
+      return line3Claimed;
+
+    case 'corners':
+    case 'fourcorners':
+    case 'four corners':
       const corners = [];
       for(let j=0; j<9; j++) if(ticketNumbers[0][j] !== null) { corners.push(ticketNumbers[0][j]); break; }
       for(let j=8; j>=0; j--) if(ticketNumbers[0][j] !== null) { corners.push(ticketNumbers[0][j]); break; }
       for(let j=0; j<9; j++) if(ticketNumbers[2][j] !== null) { corners.push(ticketNumbers[2][j]); break; }
       for(let j=8; j>=0; j--) if(ticketNumbers[2][j] !== null) { corners.push(ticketNumbers[2][j]); break; }
-      if (corners.length !== 4) { logger.warn("Corners validation warning: Could not identify 4 corner numbers on the ticket."); return false; }
+
+      if (corners.length !== 4) { 
+        logger.warn("Corners validation warning: Could not identify 4 corner numbers on the ticket.");
+        return false;
+      }
       const cornersClaimed = corners.every(num => claimedNumbersOnTicket.includes(num));
-      if (!cornersClaimed) logger.warn("Corners validation failed: Not all 4 corner numbers are in player's claim."); else logger.info("Corners validation: Passed."); return cornersClaimed;
-    case 'fullhouse': case 'full house':
-      if (ticketFlatNumbers.length !== 15) { logger.warn("Full House validation warning: Ticket does not have 15 numbers."); return false; }
-      const fullHouseClaimed = ticketFlatNumbers.every(num => claimedNumbersOnTicket.includes(num)) && claimedNumbersOnTicket.length >= ticketFlatNumbers.length;
-      if (!fullHouseClaimed) logger.warn("Full House validation failed: Not all 15 ticket numbers are in player's claim, or player claimed too few."); else logger.info("Full House validation: Passed."); return fullHouseClaimed;
+      if (!cornersClaimed) logger.warn("Corners validation failed: Not all 4 corner numbers are in player's claim.");
+      else logger.info("Corners validation: Passed.");
+      return cornersClaimed;
+
+    case 'fullhouse':
+    case 'full house':
+      if (ticketFlatNumbers.length !== 15) {
+        logger.warn("Full House validation warning: Ticket does not have 15 numbers.");
+        return false; 
+      }
+      const fullHouseClaimed = ticketFlatNumbers.every(num => claimedNumbersOnTicket.includes(num)) &&
+                               claimedNumbersOnTicket.length >= ticketFlatNumbers.length; 
+      if (!fullHouseClaimed) logger.warn("Full House validation failed: Not all 15 ticket numbers are in player's claim, or player claimed too few.");
+      else logger.info("Full House validation: Passed.");
+      return fullHouseClaimed;
+
     default:
-      logger.warn(`Unknown prize rule ID for validation: '${ruleId}'. Claim rejected.`); return false;
+      logger.warn(`Unknown prize rule ID for validation: '${ruleId}'. Claim rejected.`);
+      return false;
   }
 }
 
@@ -162,29 +231,35 @@ function ensureAuthenticated(context) {
 
 exports.createGameRoom = functions.https.onRequest((req, res) => {
     // Step 1: Handle preflight OPTIONS request explicitly
+    // Set CORS headers for preflight requests
+    res.set('Access-Control-Allow-Origin', '*'); // Or your specific frontend domain e.g. 'https://tambolapremium.netlify.app'
+    res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'); // Specify allowed methods
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization'); // Specify allowed headers
+    res.set('Access-Control-Max-Age', '3600'); // Optional: Cache preflight response
+
     if (req.method === 'OPTIONS') {
-        res.set('Access-Control-Allow-Origin', '*'); // Or specific origin: 'https://tambolapremium.netlify.app'
-        res.set('Access-Control-Allow-Methods', 'POST, GET, OPTIONS'); // Must include POST (and GET if you ever use it for this fn)
-        res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization'); // Crucial for custom headers like Authorization
-        res.set('Access-Control-Max-Age', '3600'); // Optional: caches preflight response for 1 hour
-        res.status(204).send(''); // 204 No Content is the standard response for successful preflight
-        return; // End execution for OPTIONS request
+        // Send response to OPTIONS preflight request
+        res.status(204).send('');
+        return; // Important to end execution for OPTIONS requests
     }
 
-    // Step 2: For actual requests (e.g., POST), use the cors middleware to set headers on the response,
-    // then proceed with the function logic.
+    // Step 2: For actual requests (e.g., POST), use the cors middleware variation or ensure logic runs after headers.
+    // The cors() call here is more about potentially setting headers on the actual response if not already done,
+    // but the primary preflight handling is above.
     cors(req, res, async () => {
-        // Ensure Access-Control-Allow-Origin is set for the actual response too.
-        // The cors({origin: true}) should ideally handle this, but an explicit set here for the actual request won't hurt.
-        res.set('Access-Control-Allow-Origin', '*'); // Or specific origin
-
+        // The above explicit OPTIONS handling should deal with preflight.
+        // This cors() call will ensure headers are on the actual response if needed.
+        // If the method is not POST (and not OPTIONS which was handled), then it's not allowed.
         if (req.method !== 'POST') {
-            res.status(405).send({ error: { message: 'Method Not Allowed' }});
+            if (!res.headersSent) { // Check if response wasn't already sent by preflight handling
+                 res.status(405).send({ error: { message: 'Method Not Allowed' }});
+            }
             return;
         }
 
         let adminUID;
         const authorization = req.headers.authorization;
+
         if (authorization && authorization.startsWith('Bearer ')) {
             const idToken = authorization.split('Bearer ')[1];
             try {
@@ -786,4 +861,7 @@ exports.submitPrizeClaim = functions.https.onCall(async (data, context) => {
       claimId: newClaimRef.id,
       status: claimStatus,
       serverValidationResult: serverValidationResult,
-      message: claimS
+      message: claimStatus === "pending_admin_approval" ? "Claim submitted and awaiting admin approval." : `Claim submission failed automatic validation: ${reason}`
+    };
+  });
+});
