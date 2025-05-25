@@ -1,350 +1,305 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tambola Admin - Sign In / Join</title>
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@latest/dist/full.css" rel="stylesheet" type="text/css" />
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <title>Tambola Game - Admin Portal</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/antd/4.24.10/antd.min.css" xintegrity="sha512-QAna2V5YCFZWMzCptqsdBfM9gKL3K0tR3jQCk27F/H9FT2Y8oHh07bVjS85jC5eEbK2B3wUoEJNhlLWP13Z20g==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <style>
         body {
-            font-family: 'Inter', sans-serif; /* Default font */
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+                'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+                'Noto Color Emoji';
+            background-color: #f0f2f5; /* Ant Design default background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
         }
-        /* Custom scrollbar for better aesthetics */
-        ::-webkit-scrollbar {
-            width: 8px;
+        .container {
+            width: 100%;
+            max-width: 480px; /* Slightly wider for a premium feel */
         }
-        ::-webkit-scrollbar-track {
-            background: #f1f1f1;
+        .logo-title {
+            text-align: center;
+            margin-bottom: 32px; /* Increased margin */
+            font-size: 2.5em; /* Larger logo title */
+            font-weight: 600;
+            color: #001529; /* Darker, more premium color */
+            letter-spacing: -0.5px;
         }
-        ::-webkit-scrollbar-thumb {
-            background: #888;
-            border-radius: 4px;
+         /* Custom styles for Ant components if needed */
+        .ant-card {
+            border-radius: 8px; /* Softer corners */
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); /* More pronounced shadow */
         }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #555;
+        .ant-card-head-title {
+            font-size: 1.5em; /* Larger card title */
+            font-weight: 500;
+            text-align: center;
+        }
+        .ant-form-item-label > label {
+            font-weight: 500;
+        }
+        .ant-btn-primary {
+            background-color: #1890ff;
+            border-color: #1890ff;
+            transition: all 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+        }
+        .ant-btn-primary:hover, .ant-btn-primary:focus {
+            background-color: #40a9ff;
+            border-color: #40a9ff;
+        }
+        #loading-spinner-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(255, 255, 255, 0.7);
+            z-index: 9999;
         }
     </style>
 </head>
-<body class="bg-base-200 min-h-screen flex flex-col" x-data="adminJoin()">
-    <nav class="navbar bg-base-100 shadow-lg sticky top-0 z-50">
-        <div class="flex-1">
-            <a class="btn btn-ghost normal-case text-xl">
-                <i class="fas fa-crown mr-2 text-primary"></i>Tambola Admin Panel
-            </a>
+<body>
+    <div id="root" class="container">
         </div>
-        <div class="flex-none">
-            <div class="dropdown dropdown-end">
-                <label tabindex="0" class="btn btn-ghost btn-circle" aria-label="Theme selector">
-                    <i class="fas fa-palette"></i>
-                </label>
-                <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[100] p-2 shadow bg-base-100 rounded-box w-52">
-                    <template x-for="theme in themes" :key="theme">
-                        <li><a @click="setTheme(theme, $event)" x-text="theme.charAt(0).toUpperCase() + theme.slice(1)"></a></li>
-                    </template>
-                </ul>
-            </div>
+
+    <div id="loading-spinner-container" style="display: none;">
         </div>
-    </nav>
 
-    <main class="flex-grow flex items-center justify-center p-4">
-        <div class="card w-full max-w-md bg-base-100 shadow-xl">
-            <div class="card-body">
-                <h2 class="card-title text-2xl mb-4 text-center">
-                    <i class="fas fa-sign-in-alt text-secondary mr-2"></i>
-                    <span x-text="currentUser ? 'Setup Room' : 'Admin Sign In'"></span>
-                </h2>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/17.0.2/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/17.0.2/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
 
-                <div x-show="!currentUser && !emailSent && !isSigningIn" class="form-control mb-4">
-                    <label class="label"><span class="label-text">Admin Email Address</span></label>
-                    <input type="email" x-model="email" placeholder="Enter your email to sign in" class="input input-bordered w-full" :disabled="isLoading" />
-                    <p x-show="errors.email" x-text="errors.email" class="text-error text-xs mt-1"></p>
-                </div>
-
-                <div x-show="emailSent && !currentUser && !isSigningIn" class="alert alert-info shadow-lg my-4">
-                    <div>
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <span>Sign-in link sent to <strong x-text="email"></strong>. Check your inbox (and spam folder) and click the link. You'll be returned to this page.</span>
-                    </div>
-                </div>
-                
-                <div x-show="currentUser && !isSigningIn">
-                     <div class="mb-2 p-2 border border-success rounded-md bg-success/10 text-success-content text-sm">
-                        Signed in as: <strong x-text="currentUser.email"></strong>
-                    </div>
-                    <div class="form-control mb-4">
-                        <label class="label">
-                            <span class="label-text">Admin Name (Display Name)</span>
-                        </label>
-                        <input type="text" x-model="adminName" placeholder="Enter your admin display name" class="input input-bordered w-full" :disabled="isLoading" />
-                        <p x-show="errors.adminName" x-text="errors.adminName" class="text-error text-xs mt-1"></p>
-                    </div>
-
-                    <div class="form-control mb-6">
-                        <label class="label">
-                            <span class="label-text">Create or Enter Room ID</span>
-                        </label>
-                        <input type="text" x-model="roomId" placeholder="Enter a unique Room ID" class="input input-bordered w-full" :disabled="isLoading" />
-                        <p x-show="errors.roomId" x-text="errors.roomId" class="text-error text-xs mt-1"></p>
-                    </div>
-                </div>
-
-                <div class="card-actions justify-center mt-2">
-                    <button x-show="!currentUser && !emailSent && !isSigningIn" @click="sendSignInLink" class="btn btn-primary w-full" :disabled="isLoading">
-                        <span x-show="isLoading" class="loading loading-spinner loading-xs"></span>
-                        <i x-show="!isLoading" class="fas fa-envelope mr-2"></i>
-                        Send Sign-In Link
-                    </button>
-
-                    <button x-show="currentUser && !isSigningIn" @click="proceedToAdminRoom" class="btn btn-success w-full" :disabled="isLoading">
-                        <span x-show="isLoading" class="loading loading-spinner loading-xs"></span>
-                        <i x-show="!isLoading" class="fas fa-door-open mr-2"></i>
-                        Join / Create Room
-                    </button>
-                </div>
-
-                 <div x-show="message" class="mt-4 p-3 rounded-md text-center text-sm"
-                     :class="{ 'bg-success text-success-content': messageType === 'success',
-                               'bg-error text-error-content': messageType === 'error',
-                               'bg-info text-info-content': messageType === 'info' }"
-                     x-text="message">
-                </div>
-                 <div x-show="isSigningIn" class="mt-4 text-center">
-                    <span class="loading loading-dots loading-lg"></span>
-                    <p class="text-sm">Finalizing sign-in, please wait...</p>
-                </div>
-            </div>
-        </div>
-    </main>
-
-    <footer class="footer footer-center p-4 bg-base-300 text-base-content">
-        <div>
-            <p>Copyright © <span x-text="new Date().getFullYear()"></span> - Tambola Game</p>
-        </div>
-    </footer>
-
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-    <script>
-      // =================================================================================
-      // IMPORTANT: REPLACE WITH YOUR WEB APP'S FIREBASE CONFIGURATION
-      // You get this from your Firebase project settings in the Firebase Console
-      // (Project settings > General > Your apps > Web app > SDK setup and configuration)
-      // =================================================================================
-      const firebaseConfig = {
-    apiKey: "AIzaSyDeQ3YkvRLvPFnpTPz-aDyh9Yr6JNLqWF0",
-    authDomain: "tambola-premium.firebaseapp.com",
-    projectId: "tambola-premium",
-    storageBucket: "tambola-premium.firebasestorage.app",
-    messagingSenderId: "431036089573",
-    appId: "1:431036089573:web:523500fb519d887535800c",
-    measurementId: "G-EQHHTY8QKE"
-      };
-      // =================================================================================
-
-      // Initialize Firebase
-      if (!firebase.apps.length) {
-          firebase.initializeApp(firebaseConfig);
-      }
-      const auth = firebase.auth(); // Firebase Auth instance
-    </script>
-
-    <script>
-        function adminJoin() {
-            return {
-                adminName: '', // This will be the display name
-                roomId: '',
-                email: '', // For Firebase Auth
-                emailSent: false,
-                currentUser: null, // Holds Firebase user object
-                isLoading: false,
-                isSigningIn: false,
-
-                message: '',
-                messageType: '', // 'success', 'error', 'info'
-                errors: {
-                    email: '',
-                    adminName: '',
-                    roomId: ''
-                },
-                themes: [
-                    "light", "dark", "cupcake", "bumblebee", "emerald", "corporate",
-                    "synthwave", "retro", "cyberpunk", "valentine", "halloween",
-                    "garden", "forest", "aqua", "lofi", "pastel", "fantasy",
-                    "wireframe", "black", "luxury", "dracula", "cmyk", "autumn",
-                    "business", "acid", "lemonade", "night", "coffee", "winter"
-                ],
-
-                init() {
-                    const savedTheme = localStorage.getItem('theme') || 'light';
-                    this.setTheme(savedTheme, null, false);
-
-                    const urlParams = new URLSearchParams(window.location.search);
-                    // Pre-fill from URL if provided (e.g. after sign-in link)
-                    if (urlParams.has('adminName')) this.adminName = urlParams.get('adminName');
-                    if (urlParams.has('roomId')) this.roomId = urlParams.get('roomId');
-                    if (urlParams.has('email')) this.email = urlParams.get('email');
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/antd/4.24.10/antd.min.js" xintegrity="sha512-jMzgkLqNfEnL9YjS7yLhXkP_7w4YjU3sF7xWjUuVjQy8R0/Xk1jLrygGqgG8J9uNlBf/gNf8G/Nf8G/Nf8G==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
 
-                    // Attempt to complete sign-in if a link is in the URL
-                    if (auth.isSignInWithEmailLink(window.location.href)) {
-                        this.isSigningIn = true;
-                        this.isLoading = true;
-                        this.message = 'Completing sign-in... Please wait.';
-                        this.messageType = 'info';
-                        let emailForSignIn = window.localStorage.getItem('emailForSignIn');
+    <script type="text/babel">
+        // React Application Code
+        const { useState, useEffect } = React;
+        const { Card, Form, Input, Button, Spin, message, Typography, Space, Modal } = antd;
+        const { Title, Text, Link } = Typography;
 
-                        if (!emailForSignIn) {
-                            // If email is not in localStorage, try to get from URL param if you passed it
-                            // Or prompt, but this is a fallback. Best if emailForSignIn is in localStorage.
-                            emailForSignIn = this.email || window.prompt('Please provide your email for confirmation:');
-                        }
-                        
-                        if (!emailForSignIn) {
-                             this.message = "Your email for sign-in was not found. Please try sending the link again from this browser.";
-                            this.messageType = 'error';
-                            this.isLoading = false;
-                            this.isSigningIn = false;
-                            if (window.history && window.history.replaceState) {
-                                window.history.replaceState(null, '', window.location.pathname);
-                            }
-                            return;
-                        }
+        // --- Firebase Configuration ---
+        // IMPORTANT: Replace with your actual Firebase project configuration
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_AUTH_DOMAIN",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_STORAGE_BUCKET",
+            messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
 
-                        auth.signInWithEmailLink(emailForSignIn, window.location.href)
-                            .then((result) => {
-                                window.localStorage.removeItem('emailForSignIn');
-                                this.currentUser = result.user;
-                                this.email = result.user.email; // Update email from authenticated user
-                                this.message = `Successfully signed in as ${result.user.email}! Now set your admin name and Room ID.`;
-                                this.messageType = 'success';
-                                if (window.history && window.history.replaceState) {
-                                    window.history.replaceState(null, '', window.location.pathname);
-                                }
-                            })
-                            .catch((error) => {
-                                console.error("Error signing in with email link:", error);
-                                this.message = `Error signing in: ${error.message}. The link might be invalid or expired. Please try sending a new link.`;
-                                this.messageType = 'error';
-                                window.localStorage.removeItem('emailForSignIn');
-                                if (window.history && window.history.replaceState) {
-                                    window.history.replaceState(null, '', window.location.pathname);
-                                }
-                            })
-                            .finally(() => {
-                                this.isLoading = false;
-                                this.isSigningIn = false;
-                                this.emailSent = false; // Reset this state
-                            });
-                    } else {
-                        // If not processing a sign-in link, check current auth state
-                        auth.onAuthStateChanged((user) => {
-                            if (this.isSigningIn) return; // Avoid race condition if link processing
-
-                            if (user) {
-                                this.currentUser = user;
-                                this.email = user.email; // Pre-fill if already signed in
-                                // You might pre-fill this.adminName if you store it in Firestore profile linked to UID
-                            } else {
-                                this.currentUser = null;
-                            }
-                        });
-                    }
-                },
-
-                setTheme(themeName, event = null, closeDropdown = true) {
-                    document.documentElement.setAttribute('data-theme', themeName);
-                    localStorage.setItem('theme', themeName);
-                    if (closeDropdown && event && event.target) {
-                        const anchorElement = event.target;
-                        const dropdownRoot = anchorElement.closest('.dropdown');
-                        const dropdownTriggerLabel = dropdownRoot?.querySelector('label[tabindex="0"]');
-                        setTimeout(() => {
-                            if (document.activeElement && dropdownRoot && dropdownRoot.contains(document.activeElement)) {
-                                if (typeof document.activeElement.blur === 'function') document.activeElement.blur();
-                            }
-                            if (dropdownTriggerLabel && typeof dropdownTriggerLabel.blur === 'function') dropdownTriggerLabel.blur();
-                        }, 0);
-                    }
-                },
-
-                validateInput(fieldsToValidate = ['email', 'adminName', 'roomId']) {
-                    this.errors = { email: '', adminName: '', roomId: '' };
-                    let isValid = true;
-
-                    if (fieldsToValidate.includes('email')) {
-                        if (!this.email.trim()) {
-                            this.errors.email = 'Admin email is required.'; isValid = false;
-                        } else if (!/^\S+@\S+\.\S+$/.test(this.email.trim())) {
-                            this.errors.email = 'Please enter a valid email address.'; isValid = false;
-                        }
-                    }
-                    if (fieldsToValidate.includes('adminName') && !this.adminName.trim()) {
-                        this.errors.adminName = 'Admin name is required.'; isValid = false;
-                    }
-                    if (fieldsToValidate.includes('roomId') && !this.roomId.trim()) {
-                        this.errors.roomId = 'Room ID is required.'; isValid = false;
-                    }
-                    return isValid;
-                },
-
-                sendSignInLink() {
-                    if (!this.validateInput(['email'])) { return; }
-                    this.isLoading = true;
-                    this.message = ''; this.messageType = '';
-
-                    const actionCodeSettings = {
-                        url: window.location.href.split('?')[0], // Redirect to this same page without query params initially
-                        handleCodeInApp: true,
-                    };
-
-                    auth.sendSignInLinkToEmail(this.email, actionCodeSettings)
-                        .then(() => {
-                            window.localStorage.setItem('emailForSignIn', this.email);
-                            this.emailSent = true;
-                            this.message = 'Sign-in link sent to your email! Please check your inbox (and spam folder). Click the link to return here and sign in.';
-                            this.messageType = 'success';
-                        })
-                        .catch((error) => {
-                            console.error("Error sending sign-in link:", error);
-                            this.message = `Error sending link: ${error.code} - ${error.message}`;
-                            this.messageType = 'error';
-                        })
-                        .finally(() => {
-                            this.isLoading = false;
-                        });
-                },
-
-                proceedToAdminRoom() { // Renamed from joinRoom
-                    this.message = '';
-                    if (!this.currentUser) {
-                        this.message = 'You must be signed in. Please use the link sent to your email, or send a new link.';
-                        this.messageType = 'error';
-                        return;
-                    }
-                    if (!this.validateInput(['adminName', 'roomId'])) { return; }
-
-                    this.isLoading = true;
-                    this.message = `Proceeding to room ${this.roomId} as Admin ${this.adminName}...`;
-                    this.messageType = 'info';
-
-                    localStorage.setItem('adminName', this.adminName);
-                    localStorage.setItem('roomId', this.roomId);
-                    localStorage.setItem('firebaseAdminUserId', this.currentUser.uid); // Store Admin's Firebase UID
-                    localStorage.setItem('firebaseAdminUserEmail', this.currentUser.email);
-
-                    // admin_room.html will handle WebSocket connection and sending ADMIN_CREATE_JOIN_ROOM
-
-                    setTimeout(() => {
-                        // Pass parameters via URL for admin_room.html to pick up
-                        window.location.href = `admin_room.html?adminName=${encodeURIComponent(this.adminName)}&roomId=${encodeURIComponent(this.roomId)}`;
-                        this.isLoading = false;
-                    }, 1000);
-                }
-            }
+        // Initialize Firebase
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
         }
+        const auth = firebase.auth();
+
+        const App = () => {
+            const [email, setEmail] = useState('');
+            const [loading, setLoading] = useState(true); // Start with loading true to check auth state
+            const [uiLoading, setUiLoading] = useState(false); // For button clicks etc.
+            const [user, setUser] = useState(null);
+            const [infoMessage, setInfoMessage] = useState('');
+            const [errorMessage, setErrorMessage] = useState('');
+
+            // Action code settings for email link
+            const actionCodeSettings = {
+                url: window.location.href, // URL to redirect back to after email link click
+                handleCodeInApp: true,
+            };
+
+            useEffect(() => {
+                // Check if the user is returning from an email link sign-in
+                if (auth.isSignInWithEmailLink(window.location.href)) {
+                    setUiLoading(true);
+                    let storedEmail = window.localStorage.getItem('emailForSignIn');
+                    if (!storedEmail) {
+                        // User opened the link on a different device. To prevent session fixation
+                        // attacks, ask the user to provide the email again. For simplicity,
+                        // we'll show an error or prompt. A modal is better.
+                        Modal.info({
+                            title: 'Confirm Email Address',
+                            content: (
+                                <Input
+                                    placeholder="Please enter your email to complete sign-in"
+                                    id="confirmEmailInput"
+                                />
+                            ),
+                            onOk() {
+                                const confirmEmail = document.getElementById('confirmEmailInput').value;
+                                if (confirmEmail) {
+                                    completeSignIn(confirmEmail, window.location.href);
+                                } else {
+                                    message.error('Email is required to complete sign-in.');
+                                    setUiLoading(false);
+                                    setLoading(false);
+                                }
+                            },
+                            onCancel() {
+                                setUiLoading(false);
+                                setLoading(false);
+                            }
+                        });
+                        return; // Stop further processing until email is confirmed
+                    }
+                    completeSignIn(storedEmail, window.location.href);
+                } else {
+                    // Regular auth state check
+                    const unsubscribe = auth.onAuthStateChanged((currentUser) => {
+                        setUser(currentUser);
+                        setLoading(false);
+                        setUiLoading(false);
+                        if (currentUser) {
+                            // Redirect to admin room or show dashboard elements
+                            // For now, just show a message. Redirection will be:
+                            // window.location.href = 'admin_room.html';
+                            console.log("Admin signed in:", currentUser.email);
+                        }
+                    });
+                    return () => unsubscribe(); // Cleanup subscription
+                }
+            }, []);
+
+            const completeSignIn = (emailToSignIn, link) => {
+                auth.signInWithEmailLink(emailToSignIn, link)
+                    .then((result) => {
+                        window.localStorage.removeItem('emailForSignIn');
+                        setUser(result.user);
+                        message.success('Successfully signed in as Admin!');
+                        setUiLoading(false);
+                        setLoading(false);
+                        // Redirect or update UI
+                        // window.location.href = 'admin_room.html'; // Example redirect
+                    })
+                    .catch((error) => {
+                        console.error("Error completing sign in with email link:", error);
+                        setErrorMessage(`Error signing in: ${error.message}. Please try sending the link again.`);
+                        message.error(`Error signing in: ${error.message}`);
+                        setUiLoading(false);
+                        setLoading(false);
+                    });
+            };
+
+            const handleSendSignInLink = async () => {
+                if (!email) {
+                    message.warning('Please enter your email address.');
+                    return;
+                }
+                setUiLoading(true);
+                setInfoMessage('');
+                setErrorMessage('');
+                try {
+                    await auth.sendSignInLinkToEmail(email, actionCodeSettings);
+                    window.localStorage.setItem('emailForSignIn', email); // Store email locally
+                    setInfoMessage(`A sign-in link has been sent to ${email}. Please check your inbox (and spam folder).`);
+                    message.success(`Sign-in link sent to ${email}!`);
+                } catch (error) => {
+                    console.error("Error sending sign in link:", error);
+                    setErrorMessage(`Failed to send sign-in link: ${error.message}. Please check the email and try again.`);
+                    message.error(`Failed to send sign-in link: ${error.message}`);
+                }
+                setUiLoading(false);
+            };
+
+            const handleSignOut = async () => {
+                setUiLoading(true);
+                try {
+                    await auth.signOut();
+                    setUser(null);
+                    setEmail(''); // Clear email field on sign out
+                    message.success('Signed out successfully.');
+                } catch (error) {
+                    console.error("Error signing out:", error);
+                    message.error(`Sign out failed: ${error.message}`);
+                }
+                setUiLoading(false);
+            };
+
+            if (loading) {
+                // Show a full-page spinner while checking auth state
+                document.getElementById('loading-spinner-container').style.display = 'flex';
+                ReactDOM.render(<Spin size="large" />, document.getElementById('loading-spinner-container'));
+                return null; // Don't render the main app yet
+            } else {
+                // Hide spinner once loading is done
+                document.getElementById('loading-spinner-container').style.display = 'none';
+            }
+
+            if (user) {
+                return (
+                    <Card title="Admin Dashboard Access" headStyle={{textAlign: 'center', fontSize: '1.5em'}}>
+                        <Space direction="vertical" size="large" style={{ width: '100%', alignItems: 'center' }}>
+                            <Title level={4}>Welcome, Admin!</Title>
+                            <Text>You are signed in as: <Text strong>{user.email}</Text></Text>
+                            <Text>You can now proceed to manage game rooms.</Text>
+                            <Button
+                                type="primary"
+                                size="large"
+                                style={{width: '60%'}}
+                                onClick={() => {
+                                    // Placeholder for actual navigation or action
+                                    window.location.href = `admin_room.html?adminId=${user.uid}`; // Example
+                                    // For now, just a message
+                                    // message.info('Redirecting to admin room management...');
+                                }}
+                            >
+                                Go to Admin Room
+                            </Button>
+                            <Button size="large" onClick={handleSignOut} loading={uiLoading} style={{width: '60%'}}>
+                                Sign Out
+                            </Button>
+                        </Space>
+                    </Card>
+                );
+            }
+
+            return (
+                <React.Fragment>
+                    <Title level={1} className="logo-title">Tambola Admin Portal</Title>
+                    <Card title="Admin Sign-In" headStyle={{textAlign: 'center', fontSize: '1.5em'}}>
+                        <Form layout="vertical" onFinish={handleSendSignInLink}>
+                            <Form.Item
+                                label="Email Address"
+                                name="email"
+                                rules={[{ required: true, type: 'email', message: 'Please input a valid email address!' }]}
+                            >
+                                <Input
+                                    placeholder="Enter your admin email"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    size="large"
+                                />
+                            </Form.Item>
+                            <Form.Item>
+                                <Button type="primary" htmlType="submit" block loading={uiLoading} size="large">
+                                    Send Sign-In Link
+                                </Button>
+                            </Form.Item>
+                        </Form>
+                        {infoMessage && <antd.Alert message={infoMessage} type="info" showIcon style={{marginTop: '16px'}} />}
+                        {errorMessage && <antd.Alert message={errorMessage} type="error" showIcon style={{marginTop: '16px'}}/>}
+                        <Text type="secondary" style={{display: 'block', textAlign: 'center', marginTop: '20px'}}>
+                            We'll send you an email with a magic link to sign in. No password needed!
+                        </Text>
+                    </Card>
+                </React.Fragment>
+            );
+        };
+
+        ReactDOM.render(<App />, document.getElementById('root'));
     </script>
 </body>
 </html>
