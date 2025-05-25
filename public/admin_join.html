@@ -76,6 +76,7 @@
 
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/17.0.2/umd/react.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/17.0.2/umd/react-dom.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
@@ -92,15 +93,13 @@
 
         // --- Firebase Configuration ---
         // IMPORTANT: Replace with your actual Firebase project configuration
-         const firebaseConfig = {
-    apiKey: "AIzaSyDeQ3YkvRLvPFnpTPz-aDyh9Yr6JNLqWF0",
-    authDomain: "tambola-premium.firebaseapp.com",
-    projectId: "tambola-premium",
-    storageBucket: "tambola-premium.firebasestorage.app",
-    messagingSenderId: "431036089573",
-    appId: "1:431036089573:web:523500fb519d887535800c",
-    measurementId: "G-EQHHTY8QKE"
-
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_AUTH_DOMAIN",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_STORAGE_BUCKET",
+            messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+            appId: "YOUR_APP_ID"
         };
 
         // Initialize Firebase
@@ -129,9 +128,6 @@
                     setUiLoading(true);
                     let storedEmail = window.localStorage.getItem('emailForSignIn');
                     if (!storedEmail) {
-                        // User opened the link on a different device. To prevent session fixation
-                        // attacks, ask the user to provide the email again. For simplicity,
-                        // we'll show an error or prompt. A modal is better.
                         Modal.info({
                             title: 'Confirm Email Address',
                             content: (
@@ -155,23 +151,19 @@
                                 setLoading(false);
                             }
                         });
-                        return; // Stop further processing until email is confirmed
+                        return;
                     }
                     completeSignIn(storedEmail, window.location.href);
                 } else {
-                    // Regular auth state check
                     const unsubscribe = auth.onAuthStateChanged((currentUser) => {
                         setUser(currentUser);
                         setLoading(false);
                         setUiLoading(false);
                         if (currentUser) {
-                            // Redirect to admin room or show dashboard elements
-                            // For now, just show a message. Redirection will be:
-                            // window.location.href = 'admin_room.html';
                             console.log("Admin signed in:", currentUser.email);
                         }
                     });
-                    return () => unsubscribe(); // Cleanup subscription
+                    return () => unsubscribe();
                 }
             }, []);
 
@@ -183,8 +175,6 @@
                         message.success('Successfully signed in as Admin!');
                         setUiLoading(false);
                         setLoading(false);
-                        // Redirect or update UI
-                        // window.location.href = 'admin_room.html'; // Example redirect
                     })
                     .catch((error) => {
                         console.error("Error completing sign in with email link:", error);
@@ -205,10 +195,10 @@
                 setErrorMessage('');
                 try {
                     await auth.sendSignInLinkToEmail(email, actionCodeSettings);
-                    window.localStorage.setItem('emailForSignIn', email); // Store email locally
+                    window.localStorage.setItem('emailForSignIn', email);
                     setInfoMessage(`A sign-in link has been sent to ${email}. Please check your inbox (and spam folder).`);
                     message.success(`Sign-in link sent to ${email}!`);
-                } catch (error) => {
+                } catch (error) { // CORRECTED THIS LINE
                     console.error("Error sending sign in link:", error);
                     setErrorMessage(`Failed to send sign-in link: ${error.message}. Please check the email and try again.`);
                     message.error(`Failed to send sign-in link: ${error.message}`);
@@ -221,7 +211,7 @@
                 try {
                     await auth.signOut();
                     setUser(null);
-                    setEmail(''); // Clear email field on sign out
+                    setEmail('');
                     message.success('Signed out successfully.');
                 } catch (error) {
                     console.error("Error signing out:", error);
@@ -231,12 +221,10 @@
             };
 
             if (loading) {
-                // Show a full-page spinner while checking auth state
                 document.getElementById('loading-spinner-container').style.display = 'flex';
                 ReactDOM.render(<Spin size="large" />, document.getElementById('loading-spinner-container'));
-                return null; // Don't render the main app yet
+                return null;
             } else {
-                // Hide spinner once loading is done
                 document.getElementById('loading-spinner-container').style.display = 'none';
             }
 
@@ -252,10 +240,7 @@
                                 size="large"
                                 style={{width: '60%'}}
                                 onClick={() => {
-                                    // Placeholder for actual navigation or action
-                                    window.location.href = `admin_room.html?adminId=${user.uid}`; // Example
-                                    // For now, just a message
-                                    // message.info('Redirecting to admin room management...');
+                                    window.location.href = `admin_room.html?adminId=${user.uid}`;
                                 }}
                             >
                                 Go to Admin Room
