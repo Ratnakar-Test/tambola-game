@@ -1,22 +1,27 @@
 {
   "name": "tambola-game-functions",
-  "description": "Cloud Functions for the Tambola Game",
-  "scripts": {
-    "serve": "echo 'Run firebase emulators:start --only functions locally (if installed)'",
-    "shell": "echo 'Run firebase functions:shell locally (if installed)'",
-    "start": "npm run shell",
-    "deploy": "echo 'Use GitHub Actions for deployment'",
-    "logs": "echo 'Run firebase functions:log locally (if installed)'"
-  },
+  "description": "Cloud Functions for Tambola Game",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
   "engines": {
     "node": "18"
   },
-  "main": "index.js",
-  "dependencies": {
-    "firebase-admin": "^12.0.0",
-    "firebase-functions": "^5.0.0",
-    "cors": "^2.8.5"
+  "scripts": {
+    "lint": "eslint .",
+    "build": "echo 'No build step configured'",
+    "serve": "firebase emulators:start --only functions",
+    "shell": "firebase functions:shell",
+    "start": "npm run shell",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
   },
-  "devDependencies": {},
-  "private": true
+  "dependencies": {
+    "firebase-admin": "^12.1.0",
+    "firebase-functions": "^5.0.1"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "eslint-config-google": "^0.14.0"
+  }
 }
