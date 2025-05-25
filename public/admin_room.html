@@ -4,9 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tambola Admin - Room Management</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/antd/4.24.10/antd.min.css" integrity="sha512-QAna2V5YCFZWMzCptqsdBfM9gKL3K0tR3jQCk27F/H9FT2Y8oHh07bVjS85jC5eEbK2B3wUoEJNhlLWP13Z20g==" crossorigin="anonymous" referrerpolicy="no-referrer" />
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/ant-design-icons/4.8.0/antd-icons.min.css" integrity="sha512-8ev9QLPSSt3Jt5RaGefUT3L2mKnK73sR2OFMIsYfHhIIHd44U8r4YQkH5Sj8kGjLz2JSVNgSb7P9f2Hh9V0n3Q==" crossorigin="anonymous" referrerpolicy="no-referrer" />
-
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/antd/4.24.10/antd.min.css" />
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
@@ -126,23 +124,20 @@
         const { UserOutlined, VideoCameraOutlined, UploadOutlined, MenuUnfoldOutlined, MenuFoldOutlined, DashboardOutlined, SettingOutlined, PlusOutlined, DeleteOutlined, LogoutOutlined, DollarCircleOutlined, ClockCircleOutlined, TrophyOutlined, TeamOutlined, BarChartOutlined, FileTextOutlined, ExperimentOutlined } = window.icons || {};
 
         // --- Firebase Configuration ---
-       const firebaseConfig = {
-    apiKey: "AIzaSyDeQ3YkvRLvPFnpTPz-aDyh9Yr6JNLqWF0",
-    authDomain: "tambola-premium.firebaseapp.com",
-    projectId: "tambola-premium",
-    storageBucket: "tambola-premium.firebasestorage.app",
-    messagingSenderId: "431036089573",
-    appId: "1:431036089573:web:523500fb519d887535800c",
-    measurementId: "G-EQHHTY8QKE"
-
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_AUTH_DOMAIN",
+            projectId: "YOUR_PROJECT_ID", // e.g., tambola-premium
+            storageBucket: "YOUR_STORAGE_BUCKET",
+            messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+            appId: "YOUR_APP_ID"
         };
 
         if (!firebase.apps.length) {
             firebase.initializeApp(firebaseConfig);
         }
         const auth = firebase.auth();
-        // We will use fetch for the onRequest function, so firebase.functions() isn't strictly needed for createGameRoom anymore here.
-        // const functions = firebase.functions(); 
+        // const functions = firebase.functions(); // Not using httpsCallable for createGameRoom anymore
 
         const App = () => {
             const [loading, setLoading] = useState(true);
@@ -170,7 +165,7 @@
                 } catch (error) {
                     message.error(`Sign out failed: ${error.message}`);
                 }
-                setUiLoading(false); // This will likely not be reached if redirect happens fast
+                setUiLoading(false);
             };
 
             const onFinishCreateRoom = async (values) => {
@@ -181,8 +176,6 @@
                 if (!auth.currentUser) {
                     message.error({ content: 'Authentication error. Please sign in again.', key: 'createRoom', duration: 5 });
                     setUiLoading(false);
-                    // Optionally redirect to sign-in
-                    // window.location.href = 'admin_join.html';
                     return;
                 }
 
@@ -196,7 +189,7 @@
                     isActive: true,
                 }));
 
-                const roomPayload = { // This is the 'data' object for the onRequest function
+                const roomPayload = { 
                     adminDisplayName: values.adminDisplayName,
                     ticketPrice: values.ticketPrice,
                     autoCallInterval: values.autoCallInterval,
@@ -205,8 +198,6 @@
 
                 try {
                     const idToken = await auth.currentUser.getIdToken(true);
-                    // IMPORTANT: Replace YOUR_PROJECT_ID and YOUR_REGION (if not us-central1) in the URL below
-                    // The function name is 'createGameRoom'
                     const functionUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/createGameRoom`;
                     
                     const response = await fetch(functionUrl, {
@@ -215,23 +206,22 @@
                             'Content-Type': 'application/json',
                             'Authorization': `Bearer ${idToken}`
                         },
-                        body: JSON.stringify({ data: roomPayload }) // onRequest expects data in req.body.data
+                        body: JSON.stringify({ data: roomPayload }) 
                     });
 
                     if (!response.ok) {
+                        // CORRECTED optional chaining for errorData.error.message
                         const errorData = await response.json().catch(() => ({ error: { message: `HTTP error! status: ${response.status}` } }));
-                        throw new Error(errorData.error?.message || `HTTP error! status: ${response.status}`);
+                        throw new Error((errorData.error && errorData.error.message) || `HTTP error! status: ${response.status}`);
                     }
 
                     const result = await response.json();
                     
-                    // Callable functions return { data: ... }. HTTP functions return directly or { data: ... } if we structure it that way.
-                    // Our modified onRequest function sends back { data: { roomId, message } }
                     if (result.data && result.data.roomId) {
                         message.success({ content: `Room created successfully! Room ID: ${result.data.roomId}`, key: 'createRoom', duration: 5 });
                         form.resetFields();
                     } else {
-                         throw new Error(result.error?.message || 'Room ID not found in response.');
+                         throw new Error((result.error && result.error.message) || 'Room ID not found in response.');
                     }
 
                 } catch (error) {
