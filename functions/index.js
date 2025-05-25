@@ -220,8 +220,6 @@ function validatePrizePattern(ticketNumbers, claimedNumbersOnTicket, gameCalledN
   }
 }
 
-// This ensureAuthenticated function is for onCall functions.
-// It won't be directly used by createGameRoom if it's an onRequest function without modification.
 function ensureAuthenticated(context) {
   if (!context.auth) {
     logger.error("Authentication check failed: User not authenticated.");
@@ -231,21 +229,21 @@ function ensureAuthenticated(context) {
 
 // --- Admin Functions ---
 
-// Modified createGameRoom to be onRequest to handle CORS explicitly
 exports.createGameRoom = functions.https.onRequest((req, res) => {
+    // cors middleware will automatically handle OPTIONS preflight requests
+    // and then pass the actual request (e.g., POST) to the callback.
     cors(req, res, async () => {
-        // Handle preflight OPTIONS request
-        if (req.method === 'OPTIONS') {
-            res.status(204).send('');
-            return;
-        }
+        // Only process POST requests for the actual logic.
+        // OPTIONS requests are handled by the cors middleware before this point.
         if (req.method !== 'POST') {
-            res.status(405).send({ error: 'Method Not Allowed' });
+            // If cors didn't already end the response for OPTIONS,
+            // and it's not POST, then it's a method we don't allow.
+             if (!res.headersSent) {
+                res.status(405).send({ error: { message: 'Method Not Allowed' }});
+            }
             return;
         }
 
-        // Authentication: For onRequest, you need to verify the ID token manually.
-        // The token should be sent by the client in the Authorization header (e.g., "Bearer <ID_TOKEN>").
         let adminUID;
         const authorization = req.headers.authorization;
         if (authorization && authorization.startsWith('Bearer ')) {
@@ -261,16 +259,11 @@ exports.createGameRoom = functions.https.onRequest((req, res) => {
             }
         } else {
             logger.warn('No Firebase ID token was passed for createGameRoom.');
-            // For callable functions, data is in req.body.data. We'll keep this structure for client compatibility for now.
-            // If there's no auth, and this function strictly requires it, send an error.
-            // For testing CORS fix, if you want to bypass auth TEMPORARILY: adminUID = "test_admin_id";
-            // But for production, strict auth is needed.
             res.status(401).send({ error: { message: 'Unauthorized. No ID token provided.' } });
             return;
         }
 
-        // Callable functions expect data in req.body.data
-        const data = req.body.data;
+        const data = req.body.data; 
         if (!data) {
             logger.error("Bad Request: No data found in request body for createGameRoom.", req.body);
             res.status(400).send({ error: { message: 'Bad Request: No data payload found.' } });
@@ -305,7 +298,7 @@ exports.createGameRoom = functions.https.onRequest((req, res) => {
             await roomRef.set({
                 roomId,
                 adminDisplayName,
-                adminUID, // UID obtained from verified ID token
+                adminUID, 
                 autoCallInterval: autoCallInterval || 5,
                 callingMode: "manual",
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -321,8 +314,6 @@ exports.createGameRoom = functions.https.onRequest((req, res) => {
                 totalMoneyCollected: 0,
             });
             logger.info(`Room ${roomId} created by admin ${adminUID}`);
-            // onRequest functions should send back JSON response.
-            // Callable functions expect { data: ... } or { error: ... }
             res.status(200).send({ data: { roomId, message: "Game room created successfully." } });
         } catch (error) {
             logger.error("Error creating game room in Firestore:", error);
@@ -330,9 +321,6 @@ exports.createGameRoom = functions.https.onRequest((req, res) => {
         }
     });
 });
-
-// --- Other functions remain as onCall, assuming they don't have CORS issues ---
-// If they do, they'd need similar conversion to onRequest with manual CORS & Auth.
 
 exports.updateGameConfiguration = functions.https.onCall(async (data, context) => {
     ensureAuthenticated(context);
