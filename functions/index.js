@@ -7,7 +7,7 @@ const admin = require("firebase-admin");
 admin.initializeApp();
 
 const db = admin.firestore();
-const cors = require('cors')({origin: true}); // Initialize CORS middleware
+const cors = require('cors')({origin: true}); // Initialize CORS middleware to allow all origins
 
 // --- Helper Functions ---
 
@@ -230,22 +230,18 @@ function ensureAuthenticated(context) {
 // --- Admin Functions ---
 
 exports.createGameRoom = functions.https.onRequest((req, res) => {
-    // cors middleware will automatically handle OPTIONS preflight requests
-    // and then pass the actual request (e.g., POST) to the callback.
+    // cors middleware will handle OPTIONS preflight requests and then call the next handler.
     cors(req, res, async () => {
-        // Only process POST requests for the actual logic.
-        // OPTIONS requests are handled by the cors middleware before this point.
+        // After cors has handled potential preflight, proceed with method check and logic.
         if (req.method !== 'POST') {
-            // If cors didn't already end the response for OPTIONS,
-            // and it's not POST, then it's a method we don't allow.
-             if (!res.headersSent) {
-                res.status(405).send({ error: { message: 'Method Not Allowed' }});
-            }
-            return;
+            // If cors middleware allowed a non-POST request through (e.g., GET),
+            // and it wasn't an OPTIONS request that cors already handled.
+            return res.status(405).send({ error: { message: 'Method Not Allowed' }});
         }
 
         let adminUID;
         const authorization = req.headers.authorization;
+
         if (authorization && authorization.startsWith('Bearer ')) {
             const idToken = authorization.split('Bearer ')[1];
             try {
@@ -253,7 +249,7 @@ exports.createGameRoom = functions.https.onRequest((req, res) => {
                 adminUID = decodedToken.uid;
                 logger.info(`User ${adminUID} authenticated for createGameRoom.`);
             } catch (error) {
-                logger.error('Error verifying Firebase ID token:', error);
+                logger.error('Error verifying Firebase ID token for createGameRoom:', error);
                 res.status(401).send({ error: { message: 'Unauthorized. Invalid ID token.' } });
                 return;
             }
@@ -263,7 +259,9 @@ exports.createGameRoom = functions.https.onRequest((req, res) => {
             return;
         }
 
-        const data = req.body.data; 
+        // Callable functions expect data in req.body.data.
+        // For direct HTTP, it's usually just req.body, but client sends {data: payload}.
+        const data = req.body.data;
         if (!data) {
             logger.error("Bad Request: No data found in request body for createGameRoom.", req.body);
             res.status(400).send({ error: { message: 'Bad Request: No data payload found.' } });
@@ -314,6 +312,7 @@ exports.createGameRoom = functions.https.onRequest((req, res) => {
                 totalMoneyCollected: 0,
             });
             logger.info(`Room ${roomId} created by admin ${adminUID}`);
+            // Client (which used to call a callable function) expects response in { data: ... }
             res.status(200).send({ data: { roomId, message: "Game room created successfully." } });
         } catch (error) {
             logger.error("Error creating game room in Firestore:", error);
