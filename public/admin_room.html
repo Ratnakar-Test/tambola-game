@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tambola Admin - Room Management</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/antd/4.24.10/antd.min.css" xintegrity="sha512-QAna2V5YCFZWMzCptqsdBfM9gKL3K0tR3jQCk27F/H9FT2Y8oHh07bVjS85jC5eEbK2B3wUoEJNhlLWP13Z20g==" crossorigin="anonymous" referrerpolicy="no-referrer" />
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/ant-design-icons/4.8.0/antd-icons.min.css" xintegrity="sha512-8ev9QLPSSt3Jt5RaGefUT3L2mKnK73sR2OFMIsYfHhIIHd44U8r4YQkH5Sj8kGjLz2JSVNgSb7P9f2Hh9V0n3Q==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/antd/4.24.10/antd.min.css" integrity="sha512-QAna2V5YCFZWMzCptqsdBfM9gKL3K0tR3jQCk27F/H9FT2Y8oHh07bVjS85jC5eEbK2B3wUoEJNhlLWP13Z20g==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/ant-design-icons/4.8.0/antd-icons.min.css" integrity="sha512-8ev9QLPSSt3Jt5RaGefUT3L2mKnK73sR2OFMIsYfHhIIHd44U8r4YQkH5Sj8kGjLz2JSVNgSb7P9f2Hh9V0n3Q==" crossorigin="anonymous" referrerpolicy="no-referrer" />
 
     <style>
         body {
@@ -115,7 +115,7 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/antd/4.24.10/antd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/ant-design-icons/4.8.0/icons.min.js" xintegrity="sha512-/NPat5CqG2gLfn2nkDe+6LKymfsbB9LR3T+RNB5BqZSTZ7aB6uHv9Qd2xES3lVv9j2mXWjRQzClq2Hq7Oq7S7A==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ant-design-icons/4.8.0/icons.min.js" integrity="sha512-/NPat5CqG2gLfn2nkDe+6LKymfsbB9LR3T+RNB5BqZSTZ7aB6uHv9Qd2xES3lVv9j2mXWjRQzClq2Hq7Oq7S7A==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
 
     <script type="text/babel">
@@ -126,7 +126,7 @@
         const { UserOutlined, VideoCameraOutlined, UploadOutlined, MenuUnfoldOutlined, MenuFoldOutlined, DashboardOutlined, SettingOutlined, PlusOutlined, DeleteOutlined, LogoutOutlined, DollarCircleOutlined, ClockCircleOutlined, TrophyOutlined, TeamOutlined, BarChartOutlined, FileTextOutlined, ExperimentOutlined } = window.icons || {};
 
         // --- Firebase Configuration ---
-         const firebaseConfig = {
+       const firebaseConfig = {
     apiKey: "AIzaSyDeQ3YkvRLvPFnpTPz-aDyh9Yr6JNLqWF0",
     authDomain: "tambola-premium.firebaseapp.com",
     projectId: "tambola-premium",
@@ -141,7 +141,8 @@
             firebase.initializeApp(firebaseConfig);
         }
         const auth = firebase.auth();
-        const functions = firebase.functions();
+        // We will use fetch for the onRequest function, so firebase.functions() isn't strictly needed for createGameRoom anymore here.
+        // const functions = firebase.functions(); 
 
         const App = () => {
             const [loading, setLoading] = useState(true);
@@ -155,8 +156,7 @@
                     if (currentUser) {
                         setUser(currentUser);
                     } else {
-                        // Not signed in, redirect to admin join page
-                        window.location.href = 'admin_join.html'; // Relative path
+                        window.location.href = 'admin_join.html'; 
                     }
                     setLoading(false);
                 });
@@ -167,17 +167,24 @@
                 setUiLoading(true);
                 try {
                     await auth.signOut();
-                    // User will be redirected by onAuthStateChanged
                 } catch (error) {
                     message.error(`Sign out failed: ${error.message}`);
                 }
-                setUiLoading(false);
+                setUiLoading(false); // This will likely not be reached if redirect happens fast
             };
 
             const onFinishCreateRoom = async (values) => {
                 setUiLoading(true);
                 message.loading({ content: 'Creating room...', key: 'createRoom' });
                 console.log('Form values for room creation:', values);
+
+                if (!auth.currentUser) {
+                    message.error({ content: 'Authentication error. Please sign in again.', key: 'createRoom', duration: 5 });
+                    setUiLoading(false);
+                    // Optionally redirect to sign-in
+                    // window.location.href = 'admin_join.html';
+                    return;
+                }
 
                 const formattedRules = (values.rules || []).map((rule, index) => ({
                     id: `rule_${Date.now()}_${index}`,
@@ -189,7 +196,7 @@
                     isActive: true,
                 }));
 
-                const roomData = {
+                const roomPayload = { // This is the 'data' object for the onRequest function
                     adminDisplayName: values.adminDisplayName,
                     ticketPrice: values.ticketPrice,
                     autoCallInterval: values.autoCallInterval,
@@ -197,17 +204,42 @@
                 };
 
                 try {
-                    const createGameRoom = functions.httpsCallable('createGameRoom');
-                    const result = await createGameRoom(roomData);
-                    message.success({ content: `Room created successfully! Room ID: ${result.data.roomId}`, key: 'createRoom', duration: 5 });
-                    form.resetFields();
+                    const idToken = await auth.currentUser.getIdToken(true);
+                    // IMPORTANT: Replace YOUR_PROJECT_ID and YOUR_REGION (if not us-central1) in the URL below
+                    // The function name is 'createGameRoom'
+                    const functionUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/createGameRoom`;
+                    
+                    const response = await fetch(functionUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${idToken}`
+                        },
+                        body: JSON.stringify({ data: roomPayload }) // onRequest expects data in req.body.data
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({ error: { message: `HTTP error! status: ${response.status}` } }));
+                        throw new Error(errorData.error?.message || `HTTP error! status: ${response.status}`);
+                    }
+
+                    const result = await response.json();
+                    
+                    // Callable functions return { data: ... }. HTTP functions return directly or { data: ... } if we structure it that way.
+                    // Our modified onRequest function sends back { data: { roomId, message } }
+                    if (result.data && result.data.roomId) {
+                        message.success({ content: `Room created successfully! Room ID: ${result.data.roomId}`, key: 'createRoom', duration: 5 });
+                        form.resetFields();
+                    } else {
+                         throw new Error(result.error?.message || 'Room ID not found in response.');
+                    }
+
                 } catch (error) {
                     console.error("Error creating game room:", error);
                     message.error({ content: `Failed to create room: ${error.message}`, key: 'createRoom', duration: 5 });
                 }
                 setUiLoading(false);
             };
-
 
             if (loading) {
                 document.getElementById('loading-spinner-container').style.display = 'flex';
@@ -231,7 +263,6 @@
                     </Menu.Item>
                 </Menu>
             );
-
 
             return (
                 <Layout className="admin-layout" style={{ minHeight: '100vh' }}>
