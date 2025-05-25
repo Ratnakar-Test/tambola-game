@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - Tambola</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@latest/dist/full.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="../common/css/style.css" rel="stylesheet" type="text/css" />
+    <link href="admin.css" rel="stylesheet" type="text/css" /> <script>
+      document.documentElement.setAttribute('data-theme', localStorage.getItem('theme') || 'light');
+    </script>
+</head>
+<body class="bg-base-200 p-4">
+    <div class="container mx-auto">
+        <header class="navbar bg-base-100 rounded-box shadow-lg mb-6">
+            <div class="flex-1">
+                <a href="../index.html" class="btn btn-ghost normal-case text-xl">Tambola Admin</a>
+            </div>
+            <div class="flex-none">
+                <span id="userStatus" class="mr-4">Loading user...</span>
+                <input type="email" id="emailInput" placeholder="Enter your email" class="input input-bordered input-sm mr-2"/>
+                <button id="sendLinkButton" class="btn btn-sm btn-outline btn-primary mr-2">Login</button>
+                <button id="signOutButton" class="btn btn-sm btn-outline" style="display:none;">Sign Out</button>
+            </div>
+        </header>
+
+        <div id="adminContent" class="hidden">
+            <h1 class="text-2xl font-bold mb-4">Admin Dashboard</h1>
+            <p>Welcome, <span id="adminDisplayName" class="font-semibold">Admin</span>!</p>
+
+            <div class="form-control my-4">
+                <label class="label cursor-pointer">
+                    <span class="label-text">Dark Mode</span>
+                    <input type="checkbox" id="themeToggleAdmin" class="toggle toggle-primary"/>
+                </label>
+            </div>
+
+            <div class="card bg-base-100 shadow-md mb-6">
+                <div class="card-body">
+                    <h2 class="card-title">Game Room Management</h2>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Admin Display Name</span></label>
+                        <input type="text" id="inputAdminDisplayName" placeholder="Your Admin Name" class="input input-bordered" />
+                    </div>
+                    <div class="form-control mt-2">
+                        <label class="label"><span class="label-text">Room ID (leave blank to create new)</span></label>
+                        <input type="text" id="inputRoomId" placeholder="Enter Room ID to join/manage" class="input input-bordered" />
+                    </div>
+                    <button id="btnCreateOrJoinRoom" class="btn btn-primary mt-4">Create / Join Room</button>
+                </div>
+            </div>
+
+            <div id="gameControlsSection" class="hidden card bg-base-100 shadow-md mb-6">
+                <div class="card-body">
+                    <h2 class="card-title">Game Controls - Room: <span id="currentRoomIdDisplay"></span></h2>
+                    <p>QR Code to Join: <span id="qrCodeContainer"></span></p>
+
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Game Rules & Prize Allocation (%)</span></label>
+                        <textarea id="inputGameRules" class="textarea textarea-bordered" placeholder="e.g., Early Five:10,Line1:15,FullHouse:50"></textarea>
+                    </div>
+                    <button id="btnSetGameRules" class="btn btn-secondary mt-2">Set Rules</button>
+                    <hr class="my-4">
+                    <button id="btnStartGame" class="btn btn-success mr-2">Start Game</button>
+                    <button id="btnCallNumberManual" class="btn btn-info mr-2">Call Next (Manual)</button>
+                    <select id="selectAutoCall" class="select select-bordered mr-2">
+                        <option value="auto">Auto-Call On</option>
+                        <option value="manual" selected>Auto-Call Off</option>
+                    </select>
+                    <input type="number" id="autoCallInterval" value="5" class="input input-sm input-bordered w-20 mr-2" title="Auto-call interval (sec)">
+                    <button id="btnPauseResumeAutoCall" class="btn btn-warning mr-2 hidden">Pause Auto-Call</button>
+                    <button id="btnStopGame" class="btn btn-error">Stop Game</button>
+
+                    <div class="mt-4">
+                        <h3>Called Numbers:</h3>
+                        <div id="calledNumbersDisplayAdmin" class="p-2 border rounded min-h-[50px] bg-base-200"></div>
+                        <h3>Latest Called: <span id="latestCalledNumberAdmin" class="font-bold text-xl">--</span></h3>
+                    </div>
+                </div>
+            </div>
+
+            <div id="connectedPlayersSection" class="hidden card bg-base-100 shadow-md mb-6">
+                <div class="card-body">
+                    <h2 class="card-title">Connected Players</h2>
+                    <div id="playersList" class="overflow-x-auto">
+                        </div>
+                </div>
+            </div>
+
+            <div id="ticketRequestsSection" class="hidden card bg-base-100 shadow-md mb-6">
+                <div class="card-body">
+                    <h2 class="card-title">Ticket Requests</h2>
+                    <div id="ticketRequestsList" class="overflow-x-auto">
+                        </div>
+                </div>
+            </div>
+
+            <div id="prizeClaimsSection" class="hidden card bg-base-100 shadow-md mb-6">
+                <div class="card-body">
+                    <h2 class="card-title">Prize Claims</h2>
+                    <div id="prizeClaimsList" class="overflow-x-auto">
+                        </div>
+                </div>
+            </div>
+
+             <div id="gameSummarySection" class="hidden card bg-base-100 shadow-md mb-6">
+                <div class="card-body">
+                    <h2 class="card-title">Game Summary & Winners</h2>
+                    <div id="gameWinnersDisplay"></div>
+                    <div id="prizeDistributionDisplay"></div>
+                    <div id="fullGameSummary"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="authFlowMessage" class="text-center p-5">
+            <p>Please sign in to access the Admin Panel.</p>
+            </div>
+    </div>
+
+    <footer class="footer footer-center p-4 text-base-content mt-auto">
+      <div>
+        <p>Admin Panel &copy; <script>document.write(new Date().getFullYear())</script></p>
+      </div>
+    </footer>
+
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-functions.js"></script>
+    <script src="../common/js/firebase-config.js"></script>
+    <script src="../common/js/auth.js"></script>
+    <script src="../common/js/utils.js"></script> <script src="../common/js/ui.js"></script> <script src="admin.js"></script>
+</body>
+</html>
