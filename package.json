@@ -1,0 +1,21 @@
+{
+  "name": "tambola-game-backend",
+  "version": "1.0.0",
+  "description": "Tambola Game Backend Server",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "ws": "^8.13.0",
+    "cors": "^2.8.5",
+    "firebase-admin": "^11.10.1"
+  },
+  "engines": {
+    "node": "18.x"
+  },
+  "author": "",
+  "license": "ISC"
+}
