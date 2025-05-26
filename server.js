@@ -62,7 +62,7 @@ function getAdminWs(roomId) {
     return null;
 }
 
-// --- Tambola Ticket Generation (from user's original server.js) ---
+// --- Tambola Ticket Generation ---
 function generateTambolaTicket() {
     let ticket = Array(3).fill(null).map(() => Array(9).fill(null));
     const numbersOnTicket = new Set();
@@ -115,7 +115,7 @@ function generateTambolaTicket() {
     return ticket;
 }
 
-// --- Prize Validation (from user's original server.js) ---
+// --- Prize Validation ---
 function getAllNumbersOnTicket(ticketNumbers) { return ticketNumbers.flat().filter(num => num !== null); }
 function getNumbersInRow(ticketNumbers, rowIndex) { if (rowIndex < 0 || rowIndex >= ticketNumbers.length) return []; return ticketNumbers[rowIndex].filter(num => num !== null); }
 function allNumbersAreCalled(numbersToCheck, calledNumbers) { if (!numbersToCheck || numbersToCheck.length === 0) return false; return numbersToCheck.every(num => calledNumbers.includes(num)); }
@@ -183,7 +183,6 @@ async function performAutoCall(roomId) {
     }
 }
 
-
 // --- WebSocket Connection Handling ---
 wss.on('connection', (ws) => {
     console.log('Client connected to WebSocket');
@@ -192,11 +191,10 @@ wss.on('connection', (ws) => {
         let message;
         try {
             message = JSON.parse(messageString);
-            // console.log(`Received: ${message.type}`, message.payload);
         } catch (e) { console.error('Failed to parse message:', messageString, e); sendMessageToClient(ws, { type: 'ERROR', payload: { message: 'Invalid message format.' } }); return; }
 
         const { type, payload } = message;
-        const connectionInfo = playerConnections.get(ws); // Might be null for initial messages
+        const connectionInfo = playerConnections.get(ws);
 
         try {
             switch (type) {
@@ -228,26 +226,37 @@ wss.on('connection', (ws) => {
                 }
                 case 'ADMIN_SUBSCRIBE_TO_ROOM': {
                     const { roomId, adminUID } = payload;
-                    if (!connectionInfo || connectionInfo.type !== 'admin' || connectionInfo.playerId !== adminUID) return sendMessageToClient(ws, {type: 'ERROR', payload: {message: 'Admin auth mismatch.'}});
+                    // Validate if the ws connection's playerId (adminUID) matches the one sent in payload
+                    if (!connectionInfo || connectionInfo.type !== 'admin' || connectionInfo.playerId !== adminUID) {
+                         // Attempt to re-establish connection info if it was lost or this is a fresh subscribe from a new WS
+                        const adminClientInfo = Array.from(playerConnections.values()).find(ci => ci.playerId === adminUID && ci.roomId === roomId && ci.type === 'admin');
+                        if(adminClientInfo){
+                            playerConnections.set(ws, { roomId, playerId: adminUID, type: 'admin' }); // Update WS for this UID
+                        } else {
+                           // If no existing connection info matches, and current WS connectionInfo is bad, this is suspicious
+                           // Or, if connectionInfo is null (first message on a new WS), set it.
+                           if (!connectionInfo) playerConnections.set(ws, { roomId, playerId: adminUID, type: 'admin' });
+                           else return sendMessageToClient(ws, {type: 'ERROR', payload: {message: 'Admin auth mismatch or invalid subscription.'}});
+                        }
+                    }
+
                     const roomRef = db.collection('rooms').doc(roomId);
                     const roomDoc = await roomRef.get();
                     if (roomDoc.exists) {
-                         playerConnections.set(ws, { roomId, playerId: adminUID, type: 'admin' }); // Re-affirm connection
                          sendMessageToClient(ws, { type: 'ROOM_STATE_UPDATE', payload: roomDoc.data() });
-                         // Also send pending requests separately as they are in subcollections
-                         const ticketRequestsSnapshot = await db.collection('rooms').doc(roomId).collection('ticketRequests').where('status', '==', 'pending').get();
+                         const ticketRequestsSnapshot = await db.collection('rooms').doc(roomId).collection('ticketRequests').where('status', '==', 'pending').orderBy('requestTimestamp', 'desc').get();
                          const ticketRequests = ticketRequestsSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()}));
-                         if(ticketRequests.length > 0) sendMessageToClient(ws, {type: 'ALL_TICKET_REQUESTS_UPDATE', payload: {requests: ticketRequests}});
+                         if(ticketRequests.length >= 0) sendMessageToClient(ws, {type: 'ALL_TICKET_REQUESTS_UPDATE', payload: {requests: ticketRequests}});
 
-                         const prizeClaimsSnapshot = await db.collection('prizeClaimsAudit').where('roomId', '==', roomId).where('status', '==', 'pending_admin_approval').get();
+                         const prizeClaimsSnapshot = await db.collection('prizeClaimsAudit').where('roomId', '==', roomId).where('status', '==', 'pending_admin_approval').orderBy('claimTimestamp', 'desc').get();
                          const prizeClaims = prizeClaimsSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()}));
-                         if(prizeClaims.length > 0) sendMessageToClient(ws, {type: 'ALL_PRIZE_CLAIMS_UPDATE', payload: {claims: prizeClaims}});
+                         if(prizeClaims.length >= 0) sendMessageToClient(ws, {type: 'ALL_PRIZE_CLAIMS_UPDATE', payload: {claims: prizeClaims}});
 
                     } else { sendMessageToClient(ws, { type: 'ERROR', payload: { message: 'Room not found.' } }); }
                     break;
                 }
 
-                case 'PLAYER_JOIN_ROOM': { // payload: { playerName, roomId, firebaseUID }
+                case 'PLAYER_JOIN_ROOM': {
                     const { playerName, roomId, firebaseUID } = payload;
                     if (!playerName || !roomId || !firebaseUID) return sendMessageToClient(ws, { type: 'ERROR', payload: { message: 'Player details incomplete.' } });
                     const roomRef = db.collection('rooms').doc(roomId);
@@ -261,22 +270,33 @@ wss.on('connection', (ws) => {
                     });
                     const playerUpdatePath = `currentActivePlayers.${firebaseUID}`;
                     await roomRef.update({
-                        [playerUpdatePath]: { playerName, ticketCount: 1, lastSeen: FieldValue.serverTimestamp(), tickets: [{id: ticketId, numbers: ticketNumbers}], isOnline: true, firebaseUID }
+                        [playerUpdatePath]: { 
+                            playerName, 
+                            ticketCount: 1, 
+                            lastSeen: FieldValue.serverTimestamp(), 
+                            tickets: [{ id: ticketId }], // Store only ticket ID reference
+                            isOnline: true, 
+                            firebaseUID 
+                        }
                     });
                     playerConnections.set(ws, { roomId, playerId: firebaseUID, type: 'player' });
                     const roomDataForPlayer = roomDoc.data();
                     sendMessageToClient(ws, { type: 'PLAYER_JOIN_SUCCESS', payload: {
-                        playerId: firebaseUID, playerName, roomId, tickets: [{id: ticketId, numbers: ticketNumbers, marked:[]}],
-                        gameStatus: roomDataForPlayer.gameStatus, calledNumbers: roomDataForPlayer.currentNumbersCalled,
-                        rules: (roomDataForPlayer.rules || []).filter(r => r.isActive), adminName: roomDataForPlayer.adminDisplayName
+                        playerId: firebaseUID, playerName, roomId, 
+                        tickets: [{id: ticketId, numbers: ticketNumbers, marked:[]}], // Send full ticket numbers for the first ticket
+                        gameStatus: roomDataForPlayer.gameStatus, 
+                        calledNumbers: roomDataForPlayer.currentNumbersCalled,
+                        rules: (roomDataForPlayer.rules || []).filter(r => r.isActive), 
+                        adminName: roomDataForPlayer.adminDisplayName
                     }});
-                    const playersList = Object.values((await roomRef.get()).data().currentActivePlayers);
+                    const playersSnapshot = await roomRef.get(); // Re-fetch to get the latest player list
+                    const playersList = Object.values(playersSnapshot.data().currentActivePlayers || {});
                     broadcastToRoom(roomId, { type: 'PLAYER_LIST_UPDATE', payload: { players: playersList.map(p=>({id: p.firebaseUID, name:p.playerName, ticketCount: p.ticketCount, isOnline: p.isOnline})) } }, ws);
                     break;
                 }
-                case 'PLAYER_REQUEST_TICKET': { // payload: { firebaseUID }
+                case 'PLAYER_REQUEST_TICKET': {
                     if (!connectionInfo || connectionInfo.type !== 'player') return;
-                    const { roomId, playerId: firebaseUID } = connectionInfo; // playerId is firebaseUID here
+                    const { roomId, playerId: firebaseUID } = connectionInfo;
                     const roomRef = db.collection('rooms').doc(roomId);
                     const roomDoc = await roomRef.get();
                     if (!roomDoc.exists) return;
@@ -295,19 +315,24 @@ wss.on('connection', (ws) => {
                     break;
                 }
 
-                case 'ADMIN_APPROVE_TICKET_REQUEST': { // payload: { requestId, targetPlayerId (firebaseUID) }
+                case 'ADMIN_APPROVE_TICKET_REQUEST': {
                     if (!connectionInfo || connectionInfo.type !== 'admin') return;
                     const { roomId } = connectionInfo;
-                    const { requestId, targetPlayerId } = payload;
+                    const { requestId, targetPlayerId } = payload; // targetPlayerId is firebaseUID
                     const requestRef = db.collection('rooms').doc(roomId).collection('ticketRequests').doc(requestId);
                     const roomRef = db.collection('rooms').doc(roomId);
                     const ticketNumbers = generateTambolaTicket();
                     const ticketId = generateUniqueId();
-                    const playerDoc = (await roomRef.get()).data().currentActivePlayers[targetPlayerId];
-
+                    
                     await db.runTransaction(async (transaction) => {
+                        const roomSnapshot = await transaction.get(roomRef);
+                        if(!roomSnapshot.exists) throw new Error("Room not found.");
+                        const playerDoc = roomSnapshot.data().currentActivePlayers[targetPlayerId];
+                        if(!playerDoc) throw new Error("Player not found in room.");
+
                         const requestDoc = await transaction.get(requestRef);
                         if (!requestDoc.exists || requestDoc.data().status !== 'pending') throw new Error("Request not found or not pending.");
+                        
                         transaction.update(requestRef, { status: 'approved', approvedAt: FieldValue.serverTimestamp(), ticketId });
                         transaction.set(db.collection('gameTickets').doc(ticketId), {
                             userId: targetPlayerId, playerName: playerDoc.playerName, roomId, numbers: ticketNumbers, createdAt: FieldValue.serverTimestamp()
@@ -315,19 +340,32 @@ wss.on('connection', (ws) => {
                         const playerUpdatePath = `currentActivePlayers.${targetPlayerId}`;
                         transaction.update(roomRef, {
                             [`${playerUpdatePath}.ticketCount`]: FieldValue.increment(1),
-                            [`${playerUpdatePath}.tickets`]: FieldValue.arrayUnion({id: ticketId, numbers: ticketNumbers})
+                            [`${playerUpdatePath}.tickets`]: FieldValue.arrayUnion({ id: ticketId }) // Store only ticket ID reference
                         });
                     });
+                    const finalRoomSnapshot = await roomRef.get(); // Get updated tickets list
+                    const updatedPlayerTickets = finalRoomSnapshot.data().currentActivePlayers[targetPlayerId].tickets;
 
                     const targetPlayerWs = Array.from(playerConnections.entries()).find(([_,val])=> val.playerId === targetPlayerId && val.roomId === roomId)?.[0];
-                    if (targetPlayerWs) sendMessageToClient(targetPlayerWs, { type: 'TICKET_APPROVED', payload: { ticket: {id: ticketId, numbers: ticketNumbers, marked: []}, allTickets: (await roomRef.get()).data().currentActivePlayers[targetPlayerId].tickets }});
-                    sendMessageToClient(ws, { type: 'ADMIN_ACTION_SUCCESS', payload: { message: `Ticket approved for ${playerDoc.playerName}` } });
-                    sendMessageToClient(ws, { type: 'TICKET_REQUEST_RESOLVED', payload: { requestId } }); // For admin UI to remove from pending
-                    const playersList = Object.values((await roomRef.get()).data().currentActivePlayers);
+                    if (targetPlayerWs) sendMessageToClient(targetPlayerWs, { type: 'TICKET_APPROVED', payload: { ticket: {id: ticketId, numbers: ticketNumbers, marked: []}, allTickets: updatedPlayerTickets }});
+                    sendMessageToClient(ws, { type: 'ADMIN_ACTION_SUCCESS', payload: { message: `Ticket approved for ${finalRoomSnapshot.data().currentActivePlayers[targetPlayerId].playerName}` } });
+                    sendMessageToClient(ws, { type: 'TICKET_REQUEST_RESOLVED', payload: { requestId } }); 
+                    const playersList = Object.values(finalRoomSnapshot.data().currentActivePlayers || {});
                     broadcastToRoom(roomId, { type: 'PLAYER_LIST_UPDATE', payload: { players: playersList.map(p=>({id: p.firebaseUID, name:p.playerName, ticketCount: p.ticketCount, isOnline: p.isOnline})) } });
                     break;
                 }
-                case 'ADMIN_REJECT_TICKET_REQUEST': { // payload: { requestId, targetPlayerId, reason }
+                // ... (Keep other handlers like ADMIN_REJECT_TICKET_REQUEST, ADMIN_UPDATE_RULES, ADMIN_START_GAME, etc. as provided in the previous full server.js, ensuring they use Firestore correctly) ...
+                // (The rest of the switch cases from the previous full server.js response should be here)
+                // For brevity in this diff, I'm not repeating all of them but they should be identical to the last full server.js I provided.
+                // Key is the change in PLAYER_JOIN_ROOM and ADMIN_APPROVE_TICKET_REQUEST demonstrated above for `tickets` array.
+
+                // Ensure all other existing case handlers from the previous complete server.js are included here.
+                // This includes: ADMIN_REJECT_TICKET_REQUEST, ADMIN_UPDATE_RULES, ADMIN_START_GAME,
+                // ADMIN_CALL_NUMBER, ADMIN_PAUSE_GAME, ADMIN_RESUME_GAME, ADMIN_STOP_GAME,
+                // PLAYER_CLAIM_PRIZE, ADMIN_APPROVE_PRIZE_CLAIM, ADMIN_REJECT_PRIZE_CLAIM
+
+                // Re-inserting the rest of the handlers from the previous version for completeness:
+                case 'ADMIN_REJECT_TICKET_REQUEST': { 
                     if (!connectionInfo || connectionInfo.type !== 'admin') return;
                     const { roomId } = connectionInfo;
                     const { requestId, targetPlayerId, reason } = payload;
@@ -339,35 +377,35 @@ wss.on('connection', (ws) => {
                     break;
                 }
 
-                case 'ADMIN_UPDATE_RULES': { // payload: { rules, financials: {totalMoneyCollected} }
+                case 'ADMIN_UPDATE_RULES': { 
                     if (!connectionInfo || connectionInfo.type !== 'admin') return;
                     const { roomId } = connectionInfo;
                     await db.collection('rooms').doc(roomId).update({
                         rules: payload.rules,
                         totalMoneyCollected: parseFloat(payload.financials.totalMoneyCollected) || 0
                     });
-                    sendMessageToClient(ws, { type: 'RULES_UPDATED_CONFIRMATION', payload: {rules: payload.rules, totalMoneyCollected: payload.financials.totalMoneyCollected} }); // For calling admin
-                    broadcastToRoom(roomId, { type: 'RULES_UPDATED_BROADCAST', payload: { rules: payload.rules.filter(r => r.isActive), totalMoneyCollected: payload.financials.totalMoneyCollected, adminUID: connectionInfo.playerId } }, ws); // For players and other admin instances
+                    sendMessageToClient(ws, { type: 'RULES_UPDATED_CONFIRMATION', payload: {rules: payload.rules, totalMoneyCollected: payload.financials.totalMoneyCollected} }); 
+                    broadcastToRoom(roomId, { type: 'RULES_UPDATED_BROADCAST', payload: { rules: payload.rules.filter(r => r.isActive), totalMoneyCollected: payload.financials.totalMoneyCollected, adminUID: connectionInfo.playerId } }, ws); 
                     break;
                 }
 
-                case 'ADMIN_START_GAME': { // payload: { rulesConfig, totalMoneyCollected, callingMode, autoCallInterval }
+                case 'ADMIN_START_GAME': { 
                     if (!connectionInfo || connectionInfo.type !== 'admin') return;
                     const { roomId } = connectionInfo;
                     await db.collection('rooms').doc(roomId).update({
                         gameStatus: "running", currentNumbersCalled: [], currentLatestCalledNumber: null,
                         gameStartTime: FieldValue.serverTimestamp(), currentWinners: [],
                         callingMode: payload.callingMode, autoCallInterval: payload.autoCallInterval,
-                        rules: payload.rulesConfig, // Save the rules configuration used for this game
+                        rules: payload.rulesConfig, 
                         totalMoneyCollected: parseFloat(payload.totalMoneyCollected) || 0
                     });
                     broadcastToRoom(roomId, { type: 'GAME_STARTED', payload: {
                         callingMode: payload.callingMode, autoCallInterval: payload.autoCallInterval,
                         rules: payload.rulesConfig.filter(r => r.isActive), totalMoneyCollected: payload.totalMoneyCollected,
-                        startTime: new Date().toISOString() // client can use this
+                        startTime: new Date().toISOString() 
                     }});
                     if (payload.callingMode === 'auto') {
-                        clearTimeout(adminAutoCallTimers.get(roomId)); // Clear any existing timer
+                        clearTimeout(adminAutoCallTimers.get(roomId)); 
                         adminAutoCallTimers.set(roomId, setTimeout(() => performAutoCall(roomId), payload.autoCallInterval * 1000));
                     }
                     break;
@@ -375,7 +413,6 @@ wss.on('connection', (ws) => {
                 case 'ADMIN_CALL_NUMBER': {
                     if (!connectionInfo || connectionInfo.type !== 'admin') return;
                     const { roomId } = connectionInfo;
-                    // This is for manual call, auto-call uses performAutoCall directly
                     const roomRef = db.collection('rooms').doc(roomId);
                     const roomDoc = await roomRef.get();
                     if (!roomDoc.exists || roomDoc.data().gameStatus !== 'running') return;
@@ -424,7 +461,6 @@ wss.on('connection', (ws) => {
                     const gameSummary = {
                         totalNumbersCalled: roomData.currentNumbersCalled.length,
                         winners: roomData.currentWinners,
-                        // players: roomData.currentActivePlayers // Could be large, admin client can filter
                     };
                     await db.collection('rooms').doc(roomId).update({ gameStatus: 'game ended by admin', gameEndTime: FieldValue.serverTimestamp(), gameSummary });
                     broadcastToRoom(roomId, { type: 'GAME_STOPPED', payload: { status: 'game ended by admin' } });
@@ -432,9 +468,9 @@ wss.on('connection', (ws) => {
                     break;
                 }
 
-                case 'PLAYER_CLAIM_PRIZE': { // payload: { ticketId, prizeRuleId, firebaseUID (playerId) }
+                case 'PLAYER_CLAIM_PRIZE': { 
                     if (!connectionInfo || connectionInfo.type !== 'player') return;
-                    const { roomId, playerId: firebaseUID } = connectionInfo; // playerId is firebaseUID
+                    const { roomId, playerId: firebaseUID } = connectionInfo; 
                     const { ticketId, prizeRuleId } = payload;
 
                     const roomDoc = await db.collection('rooms').doc(roomId).get();
@@ -445,31 +481,22 @@ wss.on('connection', (ws) => {
                     const ticketData = ticketDoc.data();
                     const ruleToClaim = (roomData.rules || []).find(r => r.id === prizeRuleId && r.isActive);
                     if (!ruleToClaim) return sendMessageToClient(ws, {type: 'ERROR', payload: {message: 'Rule not active or found.'}});
-
-                    // Basic check for duplicate claims (more robust check on admin approval)
+                    
                     if ((roomData.currentWinners || []).some(w => w.userId === firebaseUID && w.prizeRuleId === prizeRuleId)) {
                        return sendMessageToClient(ws, {type: 'ERROR', payload: {message: `You have already won or claimed '${ruleToClaim.name}'.`}});
                     }
-                    // Check against pending claims too for this user and prize
                     const existingClaimsSnapshot = await db.collection('prizeClaimsAudit')
-                        .where('roomId', '==', roomId)
-                        .where('userId', '==', firebaseUID)
-                        .where('prizeRuleId', '==', prizeRuleId)
-                        .where('status', 'in', ['pending_validation', 'pending_admin_approval'])
-                        .limit(1).get();
+                        .where('roomId', '==', roomId).where('userId', '==', firebaseUID).where('prizeRuleId', '==', prizeRuleId)
+                        .where('status', 'in', ['pending_validation', 'pending_admin_approval']).limit(1).get();
                     if(!existingClaimsSnapshot.empty) {
                         return sendMessageToClient(ws, {type: 'ERROR', payload: {message: `You have a pending claim for '${ruleToClaim.name}'.`}});
                     }
-
 
                     const isValid = validatePrizeClaim(ticketData.numbers, roomData.currentNumbersCalled, ruleToClaim.name);
                     const claimId = generateUniqueId();
                     const claimData = {
                         userId: firebaseUID, playerName: ticketData.playerName, roomId, ticketId, prizeRuleId, prizeName: ruleToClaim.name,
-                        // claimedNumbersOnTicket: payload.clientMarkedNumbers, // Client should send this
-                        status: "pending_admin_approval", // Defaulting to admin approval directly
-                        serverValidationResult: isValid, // Server's opinion
-                        claimTimestamp: FieldValue.serverTimestamp()
+                        status: "pending_admin_approval", serverValidationResult: isValid, claimTimestamp: FieldValue.serverTimestamp()
                     };
                     await db.collection('prizeClaimsAudit').doc(claimId).set(claimData);
                     sendMessageToClient(ws, { type: 'PLAYER_CLAIM_SUBMITTED', payload: { claimId, prizeName: ruleToClaim.name, status: 'pending_admin_approval' } });
@@ -477,9 +504,9 @@ wss.on('connection', (ws) => {
                     if (adminWs) sendMessageToClient(adminWs, { type: 'NEW_PRIZE_CLAIM', payload: {id: claimId, ...claimData} });
                     break;
                 }
-                case 'ADMIN_APPROVE_PRIZE_CLAIM': { // payload: { claimId, targetPlayerId, prizeName, prizeRuleId, ticketId }
+                case 'ADMIN_APPROVE_PRIZE_CLAIM': { 
                     if (!connectionInfo || connectionInfo.type !== 'admin') return;
-                    const { roomId, playerId: adminUID } = connectionInfo; // playerId is admin's firebaseUID
+                    const { roomId, playerId: adminUID } = connectionInfo; 
                     const { claimId, targetPlayerId, prizeRuleId } = payload;
 
                     const roomRef = db.collection('rooms').doc(roomId);
@@ -496,7 +523,6 @@ wss.on('connection', (ws) => {
                         const ruleInfo = (roomData.rules || []).find(r => r.id === prizeRuleId && r.isActive);
                         if (!ruleInfo) throw new Error("Rule not active or found for claim.");
                         
-                        // Prevent multiple winners for single-winner prizes if already claimed
                         const maxPrizesForRule = parseInt(ruleInfo.maxPrizes) || 1;
                         const existingWinnersForRule = (roomData.currentWinners || []).filter(w => w.prizeRuleId === prizeRuleId).length;
                         if (existingWinnersForRule >= maxPrizesForRule) {
@@ -511,19 +537,16 @@ wss.on('connection', (ws) => {
                         };
                         transaction.update(claimRef, { status: "approved", coinsAwarded, reviewedAt: FieldValue.serverTimestamp(), reviewedBy: adminUID });
                         transaction.update(roomRef, { currentWinners: FieldValue.arrayUnion(winnerDetails) });
-                        // Update player's total coins if tracking in currentActivePlayers
-                        // const playerCoinPath = `currentActivePlayers.${targetPlayerId}.totalCoinsWon`;
-                        // transaction.update(roomRef, { [playerCoinPath]: FieldValue.increment(coinsAwarded) });
                     });
                     const approvedClaimData = (await claimRef.get()).data();
                     const targetPlayerWs = Array.from(playerConnections.entries()).find(([_,val])=> val.playerId === targetPlayerId && val.roomId === roomId)?.[0];
-                    if (targetPlayerWs) sendMessageToClient(targetPlayerWs, { type: 'CLAIM_STATUS_UPDATE', payload: { claimId, prizeName: approvedClaimData.prizeName, status: 'approved', coinsAwarded: approvedClaimData.coinsAwarded /*, totalCoins: ... */ } });
+                    if (targetPlayerWs) sendMessageToClient(targetPlayerWs, { type: 'CLAIM_STATUS_UPDATE', payload: { claimId, prizeName: approvedClaimData.prizeName, status: 'approved', coinsAwarded: approvedClaimData.coinsAwarded } });
                     sendMessageToClient(ws, { type: 'ADMIN_ACTION_SUCCESS', payload: { message: `Prize '${approvedClaimData.prizeName}' approved.` } });
                     sendMessageToClient(ws, { type: 'PRIZE_CLAIM_RESOLVED', payload: { claimId, status: 'approved', winnerDetails: approvedClaimData } });
-                    broadcastToRoom(roomId, {type: 'WINNER_ANNOUNCEMENT', payload: approvedClaimData}, ws); // Exclude approving admin
+                    broadcastToRoom(roomId, {type: 'WINNER_ANNOUNCEMENT', payload: {...winnerDetails, timestamp: new Date().toISOString()}}, ws); 
                     break;
                 }
-                case 'ADMIN_REJECT_PRIZE_CLAIM': { // payload: { claimId, targetPlayerId, prizeName, reason }
+                case 'ADMIN_REJECT_PRIZE_CLAIM': { 
                     if (!connectionInfo || connectionInfo.type !== 'admin') return;
                     const { roomId, playerId: adminUID } = connectionInfo;
                     const { claimId, targetPlayerId, prizeName, reason } = payload;
@@ -537,14 +560,13 @@ wss.on('connection', (ws) => {
                     break;
                 }
 
+
                 default:
                     sendMessageToClient(ws, { type: 'ERROR', payload: { message: `Unknown message type: ${type}` } });
             }
-        } catch (error)
-        {
-            console.error(`Error processing ${type}:`, error.message, payload);
+        } catch (error) {
+            console.error(`Error processing ${type} for ${connectionInfo ? connectionInfo.playerId : 'unknown client'}:`, error.message, payload);
             sendMessageToClient(ws, { type: 'ERROR', payload: { message: error.message || `Server error processing ${type}.` } });
-             // For admin actions, send specific failure message if possible
             if (connectionInfo && connectionInfo.type === 'admin' && (type.startsWith("ADMIN_APPROVE") || type.startsWith("ADMIN_REJECT"))) {
                 sendMessageToClient(ws, {type: 'ADMIN_ACTION_FAIL', payload: {message: error.message || "Action failed on server."}});
             }
@@ -554,7 +576,7 @@ wss.on('connection', (ws) => {
     ws.on('close', async () => {
         const connectionInfo = playerConnections.get(ws);
         if (connectionInfo) {
-            const { roomId, playerId, type } = connectionInfo; // playerId is firebaseUID
+            const { roomId, playerId, type } = connectionInfo; 
             playerConnections.delete(ws);
             console.log(`${type} ${playerId} disconnected from room ${roomId}`);
 
@@ -564,26 +586,21 @@ wss.on('connection', (ws) => {
                     await db.runTransaction(async (transaction) => {
                         const roomDoc = await transaction.get(roomRef);
                         if (!roomDoc.exists) return;
-                        const currentActivePlayers = roomDoc.data().currentActivePlayers || {};
+                        const roomData = roomDoc.data();
+                        const currentActivePlayers = roomData.currentActivePlayers || {};
                         if (currentActivePlayers[playerId]) {
                              currentActivePlayers[playerId].isOnline = false;
                              currentActivePlayers[playerId].lastSeen = FieldValue.serverTimestamp();
-                            // To fully remove: delete currentActivePlayers[playerId];
                             transaction.update(roomRef, { currentActivePlayers });
                             const playersList = Object.values(currentActivePlayers);
                             broadcastToRoom(roomId, { type: 'PLAYER_LIST_UPDATE', payload: { players: playersList.map(p=>({id: p.firebaseUID, name:p.playerName, ticketCount: p.ticketCount, isOnline: p.isOnline})) } });
                         }
                     });
                 } catch (error) { console.error(`Error updating player disconnect for ${playerId} in ${roomId}:`, error); }
-            } else if (type === 'admin') {
-                // Admin disconnected, room state persists.
-                // Could clear auto-call timer if admin was the only one who could restart it.
-                const timer = adminAutoCallTimers.get(roomId);
-                // if(timer) { clearTimeout(timer); adminAutoCallTimers.delete(roomId); console.log(`Auto-call timer for room ${roomId} cleared due to admin disconnect.`); }
             }
         } else { console.log('Unknown client disconnected'); }
     });
-    ws.on('error', (error) => { console.error('WebSocket error with client:', error); /* ws.onclose will also be called */ });
+    ws.on('error', (error) => { console.error('WebSocket error with client:', error); });
 });
 
 // --- HTTP Routes ---
@@ -591,7 +608,7 @@ app.get('/', (req, res) => res.send('Tambola Game Backend (Firestore) is running
 app.get('/health', (req, res) => res.status(200).json({ status: 'UP', timestamp: new Date().toISOString() }));
 app.get('/debug/rooms', async (req, res) => {
     try {
-        const roomsSnapshot = await db.collection('rooms').limit(50).get(); // Limit for safety
+        const roomsSnapshot = await db.collection('rooms').limit(50).get();
         const allRoomsData = roomsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         res.json(allRoomsData);
     } catch (error) { res.status(500).send("Error fetching rooms data."); }
