@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tambola Admin - Join</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@latest/dist/full.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen flex flex-col" x-data="adminJoin()">
+    <nav class="navbar bg-base-100 shadow-lg sticky top-0 z-50">
+        <div class="flex-1">
+            <a class="btn btn-ghost normal-case text-xl">
+                <i class="fas fa-crown mr-2 text-primary"></i>Tambola Admin Panel
+            </a>
+        </div>
+        <div class="flex-none">
+            <div class="dropdown dropdown-end">
+                <label tabindex="0" class="btn btn-ghost btn-circle" aria-label="Theme selector">
+                    <i class="fas fa-palette"></i>
+                </label>
+                <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-100 rounded-box w-52">
+                    <template x-for="theme in themes" :key="theme">
+                        <li><a @click="setTheme(theme, $event)" x-text="theme.charAt(0).toUpperCase() + theme.slice(1)"></a></li>
+                    </template>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <main class="flex-grow flex items-center justify-center p-4">
+        <div class="card w-full max-w-md bg-base-100 shadow-xl">
+            <div class="card-body">
+                <h2 class="card-title text-2xl mb-6 text-center">
+                    <i class="fas fa-sign-in-alt text-secondary mr-2"></i>Admin Login
+                </h2>
+                
+                <div class="form-control mb-4">
+                    <label class="label">
+                        <span class="label-text">Admin Name (Display Name)</span>
+                    </label>
+                    <input type="text" x-model="adminName" placeholder="Enter your display name" class="input input-bordered w-full" />
+                    <p x-show="errors.adminName" x-text="errors.adminName" class="text-error text-xs mt-1"></p>
+                </div>
+
+                <div class="form-control mb-6">
+                    <label class="label">
+                        <span class="label-text">Create or Enter Room ID</span>
+                    </label>
+                    <input type="text" x-model="roomId" placeholder="Enter a unique Room ID" class="input input-bordered w-full" />
+                     <p x-show="errors.roomId" x-text="errors.roomId" class="text-error text-xs mt-1"></p>
+                </div>
+
+                <div class="card-actions justify-center">
+                    <button @click="joinRoom" class="btn btn-primary w-full" :disabled="isLoading">
+                        <span x-show="isLoading" class="loading loading-spinner loading-xs mr-2"></span>
+                        <i x-show="!isLoading" class="fas fa-door-open mr-2"></i>
+                        Join / Create Room
+                    </button>
+                </div>
+                 <div x-show="message" class="mt-4 p-2 rounded-md text-center"
+                     :class="{ 'bg-success text-success-content': messageType === 'success', 'bg-error text-error-content': messageType === 'error', 'bg-info text-info-content': messageType === 'info' }"
+                     x-text="message">
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="footer footer-center p-4 bg-base-300 text-base-content">
+        <div>
+            <p>Copyright © <span x-text="new Date().getFullYear()"></span> - Tambola Game</p>
+        </div>
+    </footer>
+
+    <script>
+        // ** START: Firebase Configuration - REPLACE WITH YOUR ACTUAL CONFIG **
+        // Go to your Firebase project console -> Project settings (gear icon) -> General tab.
+        // Under "Your apps", find your web app (or create one).
+        // Copy the firebaseConfig object provided there and paste it below.
+         const firebaseConfig = {
+    apiKey: "AIzaSyDeQ3YkvRLvPFnpTPz-aDyh9Yr6JNLqWF0",
+    authDomain: "tambola-premium.firebaseapp.com",
+    projectId: "tambola-premium",
+    storageBucket: "tambola-premium.firebasestorage.app",
+    messagingSenderId: "431036089573",
+    appId: "1:431036089573:web:523500fb519d887535800c",
+    measurementId: "G-EQHHTY8QKE"
+
+        };
+        // ** END: Firebase Configuration **
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+
+        function adminJoin() {
+            return {
+                adminName: '',
+                roomId: '',
+                firebaseUID: null, // To store Firebase Auth User ID
+                isLoading: false,
+                message: '',
+                messageType: 'info', // Default message type
+                errors: {
+                    adminName: '',
+                    roomId: ''
+                },
+                themes: [
+                    "light", "dark", "cupcake", "bumblebee", "emerald", "corporate", 
+                    "synthwave", "retro", "cyberpunk", "valentine", "halloween", 
+                    "garden", "forest", "aqua", "lofi", "pastel", "fantasy", 
+                    "wireframe", "black", "luxury", "dracula", "cmyk", "autumn", 
+                    "business", "acid", "lemonade", "night", "coffee", "winter"
+                ],
+                ws: null, // WebSocket instance
+                
+                init() {
+                    const savedTheme = localStorage.getItem('theme') || 'light';
+                    this.setTheme(savedTheme, null, false);
+                    
+                    auth.onAuthStateChanged(user => {
+                        if (user) {
+                            this.firebaseUID = user.uid;
+                            console.log("Admin authenticated. UID:", this.firebaseUID);
+                            this.adminName = localStorage.getItem('adminDisplayName') || '';
+                            if (this.message === 'Initializing admin session...') { // Clear init message if auth state changes quickly
+                               this.clearMessageAfterDelay(100); // Clear "Initializing..." message
+                            }
+                        } else {
+                            // If not signed in, attempt to sign in anonymously automatically
+                            this.signInAdminAnonymously();
+                        }
+                    });
+
+                    const urlParams = new URLSearchParams(window.location.search);
+                    if (urlParams.has('adminName')) this.adminName = urlParams.get('adminName');
+                    if (urlParams.has('roomId')) this.roomId = urlParams.get('roomId');
+                },
+
+                async signInAdminAnonymously() {
+                    if (this.isLoading && this.message === 'Initializing admin session...') return; // Prevent multiple calls if already in progress
+
+                    this.isLoading = true;
+                    this.message = 'Initializing admin session...';
+                    this.messageType = 'info';
+                    try {
+                        const userCredential = await auth.signInAnonymously();
+                        this.firebaseUID = userCredential.user.uid;
+                        this.message = 'Admin session initialized.';
+                        this.messageType = 'success';
+                        console.log("Admin signed in anonymously. UID:", this.firebaseUID);
+                        this.clearMessageAfterDelay();
+                    } catch (error) {
+                        console.error("Error signing in anonymously:", error);
+                        this.message = `Error initializing session: ${error.message}`;
+                        this.messageType = 'error';
+                        this.errors.adminName = 'Could not initialize admin session. Check console.';
+                         // Do not auto-clear error messages
+                    } finally {
+                        this.isLoading = false;
+                    }
+                },
+                
+                clearMessageAfterDelay(delay = 3000) {
+                    setTimeout(() => {
+                        // Clear message only if it's not an error or a specific persistent message
+                        if (this.messageType !== 'error') {
+                           this.message = '';
+                        }
+                    }, delay);
+                },
+
+                setTheme(themeName, event = null, closeDropdown = true) {
+                    document.documentElement.setAttribute('data-theme', themeName);
+                    localStorage.setItem('theme', themeName);
+                    
+                    if (closeDropdown && event && event.target) {
+                        const anchorElement = event.target; 
+                        const dropdownRoot = anchorElement.closest('.dropdown'); 
+                        const dropdownTriggerLabel = dropdownRoot?.querySelector('label[tabindex="0"]'); 
+
+                        setTimeout(() => {
+                            if (document.activeElement instanceof HTMLElement && dropdownRoot?.contains(document.activeElement)) {
+                                document.activeElement.blur();
+                            }
+                            dropdownTriggerLabel?.blur();
+                        }, 0); 
+                    }
+                },
+
+                validateInput() {
+                    this.errors.adminName = '';
+                    this.errors.roomId = '';
+                    let isValid = true;
+                    if (!this.adminName.trim()) {
+                        this.errors.adminName = 'Admin display name is required.';
+                        isValid = false;
+                    }
+                    if (!this.roomId.trim()) {
+                        this.errors.roomId = 'Room ID is required.';
+                        isValid = false;
+                    }
+                    if (!this.firebaseUID) { // Check if Firebase UID is available
+                        this.message = 'Admin session not ready. Please wait or refresh.';
+                        this.messageType = 'error';
+                        isValid = false;
+                    }
+                    return isValid;
+                },
+
+                connectWebSocket() {
+                    // **IMPORTANT**: Replace with your actual Render backend WebSocket URL
+                    // Example for local testing: const wsUrl = 'ws://localhost:3000';
+                    const wsUrl = 'wss://wss://tambola-game-b2e3.onrender.com'; // e.g., wss://tambola-backend-app.onrender.com
+
+                    return new Promise((resolve, reject) => {
+                        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                            console.log('WebSocket already open.');
+                            resolve(this.ws);
+                            return;
+                        }
+                        
+                        if (this.ws && (this.ws.readyState === WebSocket.CONNECTING)) {
+                            console.log('WebSocket connection attempt already in progress.');
+                            // Wait for current attempt to resolve or fail
+                            // This simple implementation doesn't queue, but prevents re-initiation immediately.
+                            // For a more robust solution, you might queue requests or use a more complex state.
+                            reject(new Error('Connection attempt in progress.'));
+                            return;
+                        }
+
+                        this.ws = new WebSocket(wsUrl);
+                        this.isLoading = true; // Show loading when trying to connect
+                        this.message = 'Connecting to server...';
+                        this.messageType = 'info';
+
+                        this.ws.onopen = () => {
+                            console.log('WebSocket connected to backend.');
+                            this.message = 'Connected. Joining room...'; // Message updated upon sending data
+                            this.messageType = 'success';
+                            // isLoading will be set to false after server response or error
+                            resolve(this.ws);
+                        };
+
+                        this.ws.onerror = (error) => {
+                            console.error('WebSocket error:', error);
+                            this.message = 'Failed to connect to server. Check console or server status.';
+                            this.messageType = 'error';
+                            this.isLoading = false;
+                            this.ws = null; // Reset WebSocket instance on error
+                            reject(error);
+                        };
+
+                        this.ws.onmessage = (event) => {
+                            const response = JSON.parse(event.data);
+                            console.log('Message from server:', response);
+                            this.isLoading = false; // Stop loading on any server response for this action
+
+                            if (response.type === 'ROOM_JOINED_SUCCESS') {
+                                this.messageType = 'success';
+                                this.message = `Successfully joined/created room ${response.payload.roomId}. Redirecting...`;
+                                localStorage.setItem('roomId', response.payload.roomId);
+                                localStorage.setItem('adminName', this.adminName); // For admin_room.html
+                                localStorage.setItem('firebaseUID', this.firebaseUID); // For admin_room.html
+                                // Store room details if needed for admin_room.html, or let it fetch fresh
+                                // localStorage.setItem('roomDetails', JSON.stringify(response.payload.roomDetails));
+                                setTimeout(() => {
+                                    window.location.href = `admin_room.html?adminName=${encodeURIComponent(this.adminName)}&roomId=${encodeURIComponent(response.payload.roomId)}`;
+                                }, 1500);
+                            } else if (response.type === 'ERROR') {
+                                this.messageType = 'error';
+                                this.message = response.payload.message || 'An error occurred processing your request.';
+                            } else {
+                                // Handle other unexpected messages if necessary
+                                console.warn("Received unhandled message type from server:", response.type);
+                            }
+                        };
+
+                        this.ws.onclose = () => {
+                            console.log('WebSocket disconnected from backend.');
+                            // Avoid overwriting an active error/success message related to join attempt
+                            if (!this.isLoading && this.messageType !== 'error' && this.messageType !== 'success') {
+                               // this.message = 'Disconnected from server.';
+                               // this.messageType = 'warning';
+                            }
+                            this.ws = null; // Reset WebSocket instance
+                            // this.isLoading = false; // isLoading should be false if not actively trying to join
+                        };
+                    });
+                },
+
+                async joinRoom() {
+                    this.message = ''; // Clear previous messages
+                    if (!this.validateInput()) {
+                        return;
+                    }
+                    this.isLoading = true; // Set loading true at the start of the action
+                    this.message = 'Attempting to join room...';
+                    this.messageType = 'info';
+
+                    // Store display name for potential reuse if page reloads or for next page
+                    localStorage.setItem('adminDisplayName', this.adminName);
+
+                    try {
+                        const socket = await this.connectWebSocket(); // Will set isLoading and message
+                        const payload = {
+                            type: 'ADMIN_CREATE_JOIN_ROOM',
+                            payload: {
+                                adminName: this.adminName,
+                                roomId: this.roomId,
+                                firebaseUID: this.firebaseUID // Send the authenticated Firebase UID
+                            }
+                        };
+                        socket.send(JSON.stringify(payload));
+                        console.log('ADMIN_CREATE_JOIN_ROOM message sent:', payload);
+                        // isLoading will be handled by onmessage or onerror of WebSocket
+                    } catch (error) {
+                        // Error handling for connectWebSocket is primarily within connectWebSocket's onerror.
+                        // If connectWebSocket promise rejects (e.g. connection already in progress), this catch might trigger.
+                        console.error("Error in joinRoom process:", error);
+                        if (!this.message || this.messageType !== 'error') { // Don't overwrite specific WS error
+                            this.message = error.message || 'Could not initiate join room process.';
+                            this.messageType = 'error';
+                        }
+                        this.isLoading = false; // Ensure loading is false if an error occurs here
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>
