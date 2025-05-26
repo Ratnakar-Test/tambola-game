@@ -33,6 +33,10 @@ jobs:
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
 
+      # Add this step to install dependencies for your functions
+      - name: Install Functions Dependencies
+        run: npm --prefix functions install # This will install dependencies from functions/package.json
+
       - name: Deploy to Firebase
         run: |
           firebase deploy --project ${{ secrets.FIREBASE_PROJECT_ID }} --only functions,firestore --token ${{ steps.auth.outputs.token }} --non-interactive
