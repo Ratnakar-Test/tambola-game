@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tambola Game - Join Room</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@latest/dist/full.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+        }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+        .confetti-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: -1; overflow: hidden; }
+        .confetti { position: absolute; width: 10px; height: 20px; background-color: oklch(var(--p)); opacity: 0.7; animation: fall 5s linear infinite; }
+        .confetti.c2 { background-color: oklch(var(--s)); animation-duration: 6s; }
+        .confetti.c3 { background-color: oklch(var(--a)); animation-duration: 4s; }
+        .confetti.c4 { background-color: oklch(var(--n)); animation-duration: 7s; }
+        @keyframes fall { 0% { transform: translateY(-10vh) rotate(0deg); } 100% { transform: translateY(110vh) rotate(720deg); } }
+    </style>
+</head>
+<body class="bg-base-200 min-h-screen flex flex-col" x-data="playerJoin()">
+    <div class="confetti-container" aria-hidden="true">
+        <template x-for="i in 50" :key="i">
+            <div class="confetti"
+                 :class="{'c1': i % 4 === 0, 'c2': i % 4 === 1, 'c3': i % 4 === 2, 'c4': i % 4 === 3 }"
+                 :style="{ left: Math.random() * 100 + 'vw', animationDelay: Math.random() * 5 + 's', transform: 'scale(' + (Math.random() * 0.5 + 0.5) + ')' }">
+            </div>
+        </template>
+    </div>
+
+    <nav class="navbar bg-base-100 shadow-lg sticky top-0 z-50">
+        <div class="flex-1">
+            <a class="btn btn-ghost normal-case text-xl">
+                <i class="fas fa-dice-d6 mr-2 text-primary"></i>Tambola Game
+            </a>
+        </div>
+        <div class="flex-none">
+            <div class="dropdown dropdown-end">
+                <label tabindex="0" class="btn btn-ghost btn-circle" aria-label="Theme selector">
+                    <i class="fas fa-palette"></i>
+                </label>
+                <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-100 rounded-box w-52">
+                    <template x-for="theme in themes" :key="theme">
+                        <li><a @click="setTheme(theme, $event)" x-text="theme.charAt(0).toUpperCase() + theme.slice(1)"></a></li>
+                    </template>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <main class="flex-grow flex items-center justify-center p-4">
+        <div class="card w-full max-w-md bg-base-100 shadow-xl">
+            <div class="card-body">
+                <h2 class="card-title text-2xl mb-6 text-center">
+                    <i class="fas fa-ticket-alt text-secondary mr-2"></i> Join Game Room
+                </h2>
+                
+                <div class="form-control mb-4">
+                    <label class="label"><span class="label-text">Your Name</span></label>
+                    <input type="text" x-model="playerName" placeholder="Enter your name" class="input input-bordered w-full" />
+                    <p x-show="errors.playerName" x-text="errors.playerName" class="text-error text-xs mt-1"></p>
+                </div>
+
+                <div class="form-control mb-6">
+                    <label class="label"><span class="label-text">Room ID</span></label>
+                    <input type="text" x-model="roomId" placeholder="Enter Room ID from Admin" class="input input-bordered w-full" />
+                     <p x-show="errors.roomId" x-text="errors.roomId" class="text-error text-xs mt-1"></p>
+                </div>
+
+                <div class="card-actions justify-center">
+                    <button @click="joinGame" class="btn btn-primary w-full" :disabled="isLoading">
+                        <span x-show="isLoading" class="loading loading-spinner loading-xs mr-2"></span>
+                        <i x-show="!isLoading" class="fas fa-gamepad mr-2"></i>Join Game
+                    </button>
+                </div>
+                 <div x-show="message" class="mt-4 p-2 rounded-md text-center"
+                     :class="{ 'bg-success text-success-content': messageType === 'success', 'bg-error text-error-content': messageType === 'error', 'bg-info text-info-content': messageType === 'info' }"
+                     x-text="message">
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="footer footer-center p-4 bg-base-300 text-base-content">
+        <div><p>Copyright © <span x-text="new Date().getFullYear()"></span> - Tambola Game</p></div>
+    </footer>
+
+    <script>
+        // ** START: Firebase Configuration - REPLACE WITH YOUR ACTUAL CONFIG **
+       const firebaseConfig = {
+    apiKey: "AIzaSyDeQ3YkvRLvPFnpTPz-aDyh9Yr6JNLqWF0",
+    authDomain: "tambola-premium.firebaseapp.com",
+    projectId: "tambola-premium",
+    storageBucket: "tambola-premium.firebasestorage.app",
+    messagingSenderId: "431036089573",
+    appId: "1:431036089573:web:523500fb519d887535800c",
+    measurementId: "G-EQHHTY8QKE"
+
+        };
+        // ** END: Firebase Configuration **
+
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+
+        function playerJoin() {
+            return {
+                playerName: '',
+                roomId: '',
+                firebaseUID: null,
+                isLoading: false,
+                message: '',
+                messageType: 'info',
+                errors: { playerName: '', roomId: '' },
+                themes: ["light", "dark", "cupcake", "bumblebee", "emerald", "corporate", "synthwave", "retro", "cyberpunk", "valentine", "halloween", "garden", "forest", "aqua", "lofi", "pastel", "fantasy", "wireframe", "black", "luxury", "dracula", "cmyk", "autumn", "business", "acid", "lemonade", "night", "coffee", "winter"],
+                ws: null,
+
+                init() {
+                    const savedTheme = localStorage.getItem('theme') || 'light';
+                    this.setTheme(savedTheme, null, false);
+
+                    auth.onAuthStateChanged(user => {
+                        if (user) {
+                            this.firebaseUID = user.uid;
+                            console.log("Player authenticated. UID:", this.firebaseUID);
+                            this.playerName = localStorage.getItem('playerNameForRoom') || '';
+                             if (this.message === 'Initializing your session...') {
+                               this.clearMessageAfterDelay(100);
+                            }
+                        } else {
+                            this.signInPlayerAnonymously();
+                        }
+                    });
+
+                    const urlParams = new URLSearchParams(window.location.search);
+                    if (urlParams.has('roomId')) this.roomId = urlParams.get('roomId');
+                },
+
+                async signInPlayerAnonymously() {
+                    if (this.isLoading && this.message === 'Initializing your session...') return;
+                    this.isLoading = true;
+                    this.message = 'Initializing your session...';
+                    this.messageType = 'info';
+                    try {
+                        const userCredential = await auth.signInAnonymously();
+                        this.firebaseUID = userCredential.user.uid;
+                        this.message = 'Session initialized.';
+                        this.messageType = 'success';
+                        console.log("Player signed in anonymously. UID:", this.firebaseUID);
+                        this.clearMessageAfterDelay();
+                    } catch (error) {
+                        console.error("Error signing in anonymously:", error);
+                        this.message = `Error initializing session: ${error.message}`;
+                        this.messageType = 'error';
+                    } finally {
+                        this.isLoading = false;
+                    }
+                },
+                
+                clearMessageAfterDelay(delay = 3000) {
+                    setTimeout(() => {
+                        if (this.messageType !== 'error') this.message = '';
+                    }, delay);
+                },
+
+                setTheme(themeName, event = null, closeDropdown = true) {
+                    document.documentElement.setAttribute('data-theme', themeName);
+                    localStorage.setItem('theme', themeName);
+                    if (closeDropdown && event && event.target) {
+                        const anchorElement = event.target; 
+                        const dropdownRoot = anchorElement.closest('.dropdown'); 
+                        const dropdownTriggerLabel = dropdownRoot?.querySelector('label[tabindex="0"]'); 
+                        setTimeout(() => {
+                            if (document.activeElement instanceof HTMLElement && dropdownRoot?.contains(document.activeElement)) document.activeElement.blur();
+                            dropdownTriggerLabel?.blur();
+                        }, 0); 
+                    }
+                },
+
+                validateInput() {
+                    this.errors.playerName = ''; this.errors.roomId = ''; let isValid = true;
+                    if (!this.playerName.trim()) { this.errors.playerName = 'Player name is required.'; isValid = false; }
+                    if (!this.roomId.trim()) { this.errors.roomId = 'Room ID is required.'; isValid = false; }
+                    if (!this.firebaseUID) { this.message = 'Session not ready. Please wait or refresh.'; this.messageType = 'error'; isValid = false; }
+                    return isValid;
+                },
+
+                connectWebSocket() {
+                    const wsUrl = 'wss://tambola-game-b2e3.onrender.com'; // Your Render backend WebSocket URL
+
+                    return new Promise((resolve, reject) => {
+                        if (this.ws && this.ws.readyState === WebSocket.OPEN) { resolve(this.ws); return; }
+                        if (this.ws && this.ws.readyState === WebSocket.CONNECTING) { reject(new Error('Connection attempt in progress.')); return; }
+
+                        this.ws = new WebSocket(wsUrl);
+                        this.isLoading = true; this.message = 'Connecting to game server...'; this.messageType = 'info';
+
+                        this.ws.onopen = () => {
+                            console.log('Player WebSocket connected.');
+                            this.message = 'Connected. Joining room...'; this.messageType = 'success';
+                            resolve(this.ws);
+                        };
+                        this.ws.onerror = (error) => {
+                            console.error('Player WebSocket error:', error);
+                            this.message = 'Failed to connect to game server. Check Room ID or server status.'; this.messageType = 'error';
+                            this.isLoading = false; this.ws = null;
+                            reject(error);
+                        };
+                        this.ws.onmessage = (event) => {
+                            const response = JSON.parse(event.data);
+                            console.log('Player message from server:', response);
+                            this.isLoading = false;
+
+                            if (response.type === 'PLAYER_JOIN_SUCCESS') {
+                                this.messageType = 'success';
+                                this.message = `Successfully joined room ${response.payload.roomId}! Preparing your game...`;
+                                
+                                // Store all necessary data for player_game.html
+                                localStorage.setItem('playerUID', response.payload.playerId); // This is firebaseUID
+                                localStorage.setItem('playerName', response.payload.playerName);
+                                localStorage.setItem('roomId', response.payload.roomId);
+                                localStorage.setItem('playerTickets', JSON.stringify(response.payload.tickets || [])); // Server sends initial ticket(s)
+                                localStorage.setItem('gameStatus', response.payload.gameStatus);
+                                localStorage.setItem('calledNumbers', JSON.stringify(response.payload.calledNumbers || []));
+                                localStorage.setItem('gameRules', JSON.stringify(response.payload.rules || []));
+                                localStorage.setItem('adminName', response.payload.adminName || 'Admin');
+                                
+                                setTimeout(() => {
+                                    window.location.href = `player_game.html`; // No need for URL params if using localStorage
+                                }, 1500);
+                            } else if (response.type === 'ERROR') {
+                                this.messageType = 'error';
+                                this.message = response.payload.message || 'Could not join room.';
+                            }
+                        };
+                        this.ws.onclose = () => {
+                            console.log('Player WebSocket disconnected.');
+                            if (!this.isLoading && this.messageType !== 'error' && this.messageType !== 'success') {
+                               // this.message = 'Disconnected from server.'; this.messageType = 'warning';
+                            }
+                            this.ws = null;
+                        };
+                    });
+                },
+
+                async joinGame() {
+                    this.message = ''; 
+                    if (!this.validateInput()) return;
+                    this.isLoading = true; this.message = 'Attempting to join room...'; this.messageType = 'info';
+                    localStorage.setItem('playerNameForRoom', this.playerName); // Save for potential re-auth persistence
+
+                    try {
+                        const socket = await this.connectWebSocket();
+                        const payload = {
+                            type: 'PLAYER_JOIN_ROOM',
+                            payload: {
+                                playerName: this.playerName,
+                                roomId: this.roomId,
+                                firebaseUID: this.firebaseUID 
+                            }
+                        };
+                        socket.send(JSON.stringify(payload));
+                        console.log('PLAYER_JOIN_ROOM message sent:', payload);
+                    } catch (error) {
+                        console.error("Error in joinGame process for player:", error);
+                        if (!this.message || this.messageType !== 'error') {
+                            this.message = error.message || 'Could not initiate join room process.';
+                            this.messageType = 'error';
+                        }
+                        this.isLoading = false;
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>
