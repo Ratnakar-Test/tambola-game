@@ -32,17 +32,18 @@ const wss = new WebSocket.Server({ server });
 
 console.log(`Tambola backend server starting on port ${PORT}...`);
 
-// --- Helper Functions (generateUniqueId, sendMessageToClient, broadcastToRoom, getAdminWs, generateTambolaTicket, prize validation) ---
-// (These functions remain identical to the previous full server.js version)
+// --- Helper Functions ---
 function generateUniqueId() {
     return Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
 }
+
 function sendMessageToClient(ws, message) {
     if (ws && ws.readyState === WebSocket.OPEN) {
         try { ws.send(JSON.stringify(message)); }
         catch (e) { console.error('Send message error for client:', e, message.type); }
     }
 }
+
 function broadcastToRoom(roomId, message, excludeWs = null) {
     wss.clients.forEach(clientWs => {
         const connInfo = playerConnections.get(clientWs);
@@ -51,6 +52,7 @@ function broadcastToRoom(roomId, message, excludeWs = null) {
         }
     });
 }
+
 function getAdminWs(roomId) {
     for (let [ws, connInfo] of playerConnections) {
         if (connInfo.roomId === roomId && connInfo.type === 'admin' && ws.readyState === WebSocket.OPEN) {
@@ -59,41 +61,65 @@ function getAdminWs(roomId) {
     }
     return null;
 }
+
+// --- Tambola Ticket Generation ---
 function generateTambolaTicket() {
     let ticket = Array(3).fill(null).map(() => Array(9).fill(null));
     const numbersOnTicket = new Set();
-    const colRanges = [ { min: 1, max: 9 }, { min: 10, max: 19 }, { min: 20, max: 29 }, { min: 30, max: 39 }, { min: 40, max: 49 }, { min: 50, max: 59 }, { min: 60, max: 69 }, { min: 70, max: 79 }, { min: 80, max: 90 }];
-    let colNumberCounts = Array(9).fill(0); let rowNumberCounts = Array(3).fill(0);
+    const colRanges = [
+        { min: 1, max: 9 }, { min: 10, max: 19 }, { min: 20, max: 29 },
+        { min: 30, max: 39 }, { min: 40, max: 49 }, { min: 50, max: 59 },
+        { min: 60, max: 69 }, { min: 70, max: 79 }, { min: 80, max: 90 }
+    ];
+    let colNumberCounts = Array(9).fill(0);
+    let rowNumberCounts = Array(3).fill(0);
+
     for (let col = 0; col < 9; col++) {
         let numbersToPlaceInCol = Math.floor(Math.random() * 2) + 1;
         if (numbersOnTicket.size < 10 && col < 5) numbersToPlaceInCol = Math.floor(Math.random() * 3) + 1;
         for (let i = 0; i < numbersToPlaceInCol; i++) {
             let row, attempts = 0;
-            do { row = Math.floor(Math.random() * 3); attempts++; } while ((ticket[row][col] !== null || rowNumberCounts[row] >= 5) && attempts < 20);
+            do { row = Math.floor(Math.random() * 3); attempts++; }
+            while ((ticket[row][col] !== null || rowNumberCounts[row] >= 5) && attempts < 20);
             if (ticket[row][col] === null && rowNumberCounts[row] < 5) {
                 let num, numAttempts = 0;
-                do { num = Math.floor(Math.random() * (colRanges[col].max - colRanges[col].min + 1)) + colRanges[col].min; numAttempts++; } while (numbersOnTicket.has(num) && numAttempts < 20);
-                if (!numbersOnTicket.has(num)) { ticket[row][col] = num; numbersOnTicket.add(num); rowNumberCounts[row]++; colNumberCounts[col]++; }
+                do { num = Math.floor(Math.random() * (colRanges[col].max - colRanges[col].min + 1)) + colRanges[col].min; numAttempts++; }
+                while (numbersOnTicket.has(num) && numAttempts < 20);
+                if (!numbersOnTicket.has(num)) {
+                    ticket[row][col] = num; numbersOnTicket.add(num); rowNumberCounts[row]++; colNumberCounts[col]++;
+                }
             }
         }
     }
     for (let r = 0; r < 3; r++) {
         while (rowNumberCounts[r] < 5) {
             let col, attempts = 0;
-            do { col = Math.floor(Math.random() * 9); attempts++; } while ((ticket[r][col] !== null || colNumberCounts[col] >= 3) && attempts < 50);
+            do { col = Math.floor(Math.random() * 9); attempts++; }
+            while ((ticket[r][col] !== null || colNumberCounts[col] >= 3) && attempts < 50);
             if (ticket[r][col] === null && colNumberCounts[col] < 3) {
                 let num, numAttempts = 0;
-                do { num = Math.floor(Math.random() * (colRanges[col].max - colRanges[col].min + 1)) + colRanges[col].min; numAttempts++; } while (numbersOnTicket.has(num) && numAttempts < 20);
-                if (!numbersOnTicket.has(num)) { ticket[r][col] = num; numbersOnTicket.add(num); rowNumberCounts[r]++; colNumberCounts[col]++; } else if (attempts >= 50) break;
+                do { num = Math.floor(Math.random() * (colRanges[col].max - colRanges[col].min + 1)) + colRanges[col].min; numAttempts++; }
+                while (numbersOnTicket.has(num) && numAttempts < 20);
+                if (!numbersOnTicket.has(num)) {
+                    ticket[r][col] = num; numbersOnTicket.add(num); rowNumberCounts[r]++; colNumberCounts[col]++;
+                } else if (attempts >= 50) break;
             } else if (attempts >= 50) break;
         }
     }
-    for (let c = 0; c < 9; c++) { let colVals = []; for (let r = 0; r < 3; r++) if (ticket[r][c] !== null) colVals.push(ticket[r][c]); colVals.sort((a, b) => a - b); let currentIdx = 0; for (let r = 0; r < 3; r++) if (ticket[r][c] !== null) ticket[r][c] = colVals[currentIdx++]; }
+    for (let c = 0; c < 9; c++) {
+        let colVals = [];
+        for (let r = 0; r < 3; r++) if (ticket[r][c] !== null) colVals.push(ticket[r][c]);
+        colVals.sort((a, b) => a - b); let currentIdx = 0;
+        for (let r = 0; r < 3; r++) if (ticket[r][c] !== null) ticket[r][c] = colVals[currentIdx++];
+    }
     return ticket;
 }
+
+// --- Prize Validation ---
 function getAllNumbersOnTicket(ticketNumbers) { return ticketNumbers.flat().filter(num => num !== null); }
 function getNumbersInRow(ticketNumbers, rowIndex) { if (rowIndex < 0 || rowIndex >= ticketNumbers.length) return []; return ticketNumbers[rowIndex].filter(num => num !== null); }
 function allNumbersAreCalled(numbersToCheck, calledNumbers) { if (!numbersToCheck || numbersToCheck.length === 0) return false; return numbersToCheck.every(num => calledNumbers.includes(num)); }
+
 function validatePrizeClaim(ticketNumbers, calledNumbers, prizeRuleName) {
     const allTicketNums = getAllNumbersOnTicket(ticketNumbers);
     switch (prizeRuleName) {
@@ -103,29 +129,51 @@ function validatePrizeClaim(ticketNumbers, calledNumbers, prizeRuleName) {
         case 'Full House': if (allTicketNums.length !== 15) return false; return allNumbersAreCalled(allTicketNums, calledNumbers);
         case 'Early 5': return allTicketNums.filter(num => calledNumbers.includes(num)).length >= 5;
         case 'Early 7': return allTicketNums.filter(num => calledNumbers.includes(num)).length >= 7;
-        case 'Corners': { const topRowActual = getNumbersInRow(ticketNumbers, 0); const bottomRowActual = getNumbersInRow(ticketNumbers, 2); if (topRowActual.length < 5 || bottomRowActual.length < 5) return false; const cornerNumbers = [topRowActual[0], topRowActual[4], bottomRowActual[0], bottomRowActual[4]]; return allNumbersAreCalled(cornerNumbers, calledNumbers); }
+        case 'Corners': {
+            const topRowActual = getNumbersInRow(ticketNumbers, 0); const bottomRowActual = getNumbersInRow(ticketNumbers, 2);
+            if (topRowActual.length < 5 || bottomRowActual.length < 5) return false;
+            const cornerNumbers = [topRowActual[0], topRowActual[4], bottomRowActual[0], bottomRowActual[4]];
+            return allNumbersAreCalled(cornerNumbers, calledNumbers);
+        }
+        // Add other rules from your original file as needed
         default: console.warn(`Unknown prize rule name for validation: ${prizeRuleName}`); return false;
     }
 }
-async function performAutoCall(roomId) { /* ... Identical to previous full server.js ... */ 
+
+// --- Auto Call Number Logic ---
+async function performAutoCall(roomId) {
     const roomRef = db.collection('rooms').doc(roomId);
     try {
         const roomDoc = await roomRef.get();
         if (!roomDoc.exists) { clearTimeout(adminAutoCallTimers.get(roomId)); adminAutoCallTimers.delete(roomId); return; }
         const roomData = roomDoc.data();
-        if (roomData.gameStatus !== 'running' || roomData.callingMode !== 'auto') { clearTimeout(adminAutoCallTimers.get(roomId)); adminAutoCallTimers.delete(roomId); return; }
+
+        if (roomData.gameStatus !== 'running' || roomData.callingMode !== 'auto') {
+            clearTimeout(adminAutoCallTimers.get(roomId)); adminAutoCallTimers.delete(roomId); return;
+        }
+
         const calledNumbers = roomData.currentNumbersCalled || [];
         let availableNumbers = [];
-        for (let i = 1; i <= 90; i++) { if (!calledNumbers.includes(i)) availableNumbers.push(i); }
+        for (let i = 1; i <= 90; i++) {
+            if (!calledNumbers.includes(i)) availableNumbers.push(i);
+        }
+
         if (availableNumbers.length === 0) {
             await roomRef.update({ gameStatus: "Game Over", gameEndTime: FieldValue.serverTimestamp() });
             broadcastToRoom(roomId, { type: 'GAME_OVER_ALL_NUMBERS_CALLED', payload: { finalCalledNumbers: calledNumbers } });
-            clearTimeout(adminAutoCallTimers.get(roomId)); adminAutoCallTimers.delete(roomId); return;
+            clearTimeout(adminAutoCallTimers.get(roomId)); adminAutoCallTimers.delete(roomId);
+            return;
         }
+
         const randomIndex = Math.floor(Math.random() * availableNumbers.length);
         const calledNumber = availableNumbers[randomIndex];
-        await roomRef.update({ currentLatestCalledNumber: calledNumber, currentNumbersCalled: FieldValue.arrayUnion(calledNumber) });
+
+        await roomRef.update({
+            currentLatestCalledNumber: calledNumber,
+            currentNumbersCalled: FieldValue.arrayUnion(calledNumber)
+        });
         broadcastToRoom(roomId, { type: 'NUMBER_CALLED', payload: { number: calledNumber, calledNumbersHistory: [...calledNumbers, calledNumber], remainingCount: availableNumbers.length - 1 } });
+
         const timerId = setTimeout(() => performAutoCall(roomId), roomData.autoCallInterval * 1000);
         adminAutoCallTimers.set(roomId, timerId);
     } catch (error) {
@@ -135,26 +183,33 @@ async function performAutoCall(roomId) { /* ... Identical to previous full serve
     }
 }
 
+
 // --- WebSocket Connection Handling ---
 wss.on('connection', (ws) => {
     console.log('Client connected to WebSocket');
+
     ws.on('message', async (messageString) => {
         let message;
-        try { message = JSON.parse(messageString); } 
-        catch (e) { console.error('Failed to parse message:', messageString, e); sendMessageToClient(ws, { type: 'ERROR', payload: { message: 'Invalid message format.' } }); return; }
+        try {
+            message = JSON.parse(messageString);
+        } catch (e) { console.error('Failed to parse message:', messageString, e); sendMessageToClient(ws, { type: 'ERROR', payload: { message: 'Invalid message format.' } }); return; }
 
         const { type, payload } = message;
         const connectionInfo = playerConnections.get(ws);
 
         try {
             switch (type) {
-                case 'ADMIN_CREATE_JOIN_ROOM': { /* ... Identical to previous ... */ 
+                case 'ADMIN_CREATE_JOIN_ROOM': {
                     const { adminName, roomId, firebaseUID } = payload;
                     if (!adminName || !roomId || !firebaseUID) return sendMessageToClient(ws, { type: 'ERROR', payload: { message: 'Admin name, Room ID, and Firebase UID are required.' } });
                     const roomRef = db.collection('rooms').doc(roomId);
                     const roomDoc = await roomRef.get();
                     if (!roomDoc.exists) {
-                        const newRoomData = { adminDisplayName: adminName, adminUID: firebaseUID, gameStatus: "idle", createdAt: FieldValue.serverTimestamp(), callingMode: "manual", autoCallInterval: 5, currentNumbersCalled: [], currentLatestCalledNumber: null, rules: [], totalMoneyCollected: 0, currentActivePlayers: {}, currentWinners: [] };
+                        const newRoomData = {
+                            adminDisplayName: adminName, adminUID: firebaseUID, gameStatus: "idle", createdAt: FieldValue.serverTimestamp(),
+                            callingMode: "manual", autoCallInterval: 5, currentNumbersCalled: [], currentLatestCalledNumber: null,
+                            rules: [], totalMoneyCollected: 0, currentActivePlayers: {}, currentWinners: []
+                        };
                         await roomRef.set(newRoomData);
                         playerConnections.set(ws, { roomId, playerId: firebaseUID, type: 'admin' });
                         sendMessageToClient(ws, { type: 'ROOM_JOINED_SUCCESS', payload: { roomId, role: 'admin', adminId: firebaseUID, roomDetails: newRoomData } });
@@ -164,27 +219,47 @@ wss.on('connection', (ws) => {
                             playerConnections.set(ws, { roomId, playerId: firebaseUID, type: 'admin' });
                             if (!roomData.adminUID) await roomRef.update({ adminUID: firebaseUID, adminDisplayName: adminName });
                             sendMessageToClient(ws, { type: 'ROOM_JOINED_SUCCESS', payload: { roomId, role: 'admin', adminId: firebaseUID, roomDetails: roomData } });
-                        } else { sendMessageToClient(ws, { type: 'ERROR', payload: { message: `Room ${roomId} managed by another admin.` } }); }
+                        } else {
+                            sendMessageToClient(ws, { type: 'ERROR', payload: { message: `Room ${roomId} managed by another admin.` } });
+                        }
                     }
                     break;
                 }
-                case 'ADMIN_SUBSCRIBE_TO_ROOM': { /* ... Identical to previous ... */ 
+                case 'ADMIN_SUBSCRIBE_TO_ROOM': {
                     const { roomId, adminUID } = payload;
-                    let currentConnectionInfo = playerConnections.get(ws);
+                    let currentConnectionInfo = playerConnections.get(ws); // Use let for potential reassignment
                     if (!currentConnectionInfo || currentConnectionInfo.type !== 'admin' || currentConnectionInfo.playerId !== adminUID ) {
+                        // Attempt to find if this adminUID is already connected to this room with another ws instance
                         const adminClientInfo = Array.from(playerConnections.values()).find(ci => ci.playerId === adminUID && ci.roomId === roomId && ci.type === 'admin');
-                        if(adminClientInfo){ playerConnections.set(ws, { roomId, playerId: adminUID, type: 'admin' }); } 
-                        else { if (!currentConnectionInfo) playerConnections.set(ws, { roomId, playerId: adminUID, type: 'admin' }); else return sendMessageToClient(ws, {type: 'ERROR', payload: {message: 'Admin auth mismatch or invalid subscription.'}}); }
+                        if(adminClientInfo){
+                            // This admin is known, update current ws to this connection
+                            playerConnections.set(ws, { roomId, playerId: adminUID, type: 'admin' });
+                        } else {
+                           // If no existing connection info matches, and current WS connectionInfo is bad, this is suspicious
+                           // Or, if connectionInfo is null (first message on a new WS), set it.
+                           if (!currentConnectionInfo) { // First message on a new WebSocket connection
+                               playerConnections.set(ws, { roomId, playerId: adminUID, type: 'admin' });
+                           } else {
+                               // Mismatch, and not a fresh WebSocket connection.
+                               return sendMessageToClient(ws, {type: 'ERROR', payload: {message: 'Admin auth mismatch or invalid subscription.'}});
+                           }
+                        }
                     }
-                    const roomRef = db.collection('rooms').doc(roomId); const roomDoc = await roomRef.get();
+
+                    const roomRef = db.collection('rooms').doc(roomId);
+                    const roomDoc = await roomRef.get();
                     if (roomDoc.exists) {
                          sendMessageToClient(ws, { type: 'ROOM_STATE_UPDATE', payload: roomDoc.data() });
                          const ticketRequestsSnapshot = await db.collection('rooms').doc(roomId).collection('ticketRequests').where('status', '==', 'pending').orderBy('requestTimestamp', 'desc').get();
                          const ticketRequests = ticketRequestsSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()}));
-                         if(ticketRequests.length >= 0) sendMessageToClient(ws, {type: 'ALL_TICKET_REQUESTS_UPDATE', payload: {requests: ticketRequests}});
+                         // Send even if empty so client can clear its list
+                         sendMessageToClient(ws, {type: 'ALL_TICKET_REQUESTS_UPDATE', payload: {requests: ticketRequests}});
+
                          const prizeClaimsSnapshot = await db.collection('prizeClaimsAudit').where('roomId', '==', roomId).where('status', '==', 'pending_admin_approval').orderBy('claimTimestamp', 'desc').get();
                          const prizeClaims = prizeClaimsSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()}));
-                         if(prizeClaims.length >= 0) sendMessageToClient(ws, {type: 'ALL_PRIZE_CLAIMS_UPDATE', payload: {claims: prizeClaims}});
+                         // Send even if empty
+                         sendMessageToClient(ws, {type: 'ALL_PRIZE_CLAIMS_UPDATE', payload: {claims: prizeClaims}});
+
                     } else { sendMessageToClient(ws, { type: 'ERROR', payload: { message: 'Room not found.' } }); }
                     break;
                 }
@@ -194,7 +269,7 @@ wss.on('connection', (ws) => {
                     if (!playerName || !roomId || !firebaseUID) return sendMessageToClient(ws, { type: 'ERROR', payload: { message: 'Player details incomplete.' } });
                     
                     const roomRef = db.collection('rooms').doc(roomId);
-                    const roomDoc = await roomRef.get(); // Read current room document
+                    const roomDoc = await roomRef.get(); 
                     
                     if (!roomDoc.exists || !["idle", "running", "paused"].includes(roomDoc.data().gameStatus) ) {
                         return sendMessageToClient(ws, { type: 'ERROR', payload: { message: 'Room not found or not joinable at this moment.' } });
@@ -203,62 +278,53 @@ wss.on('connection', (ws) => {
                     const ticketNumbers = generateTambolaTicket();
                     const ticketId = generateUniqueId();
                     
-                    // 1. Write to gameTickets collection (this is fine)
                     await db.collection('gameTickets').doc(ticketId).set({
                         userId: firebaseUID, playerName, roomId, numbers: ticketNumbers, createdAt: FieldValue.serverTimestamp()
                     });
 
-                    // 2. Update the rooms document - ** MODIFIED APPROACH **
-                    const roomData = roomDoc.data(); // Use data from the earlier .get()
+                    const roomDataFromRead = roomDoc.data(); // Use data from the earlier .get()
                     const newPlayerObject = {
                         playerName,
                         ticketCount: 1,
                         lastSeen: FieldValue.serverTimestamp(),
-                        tickets: [{ id: ticketId }], // Storing only ticket ID reference
+                        tickets: [{ id: ticketId }], 
                         isOnline: true,
                         firebaseUID
                     };
 
-                    // Ensure currentActivePlayers exists and is an object before spreading
-                    let currentActivePlayers = roomData.currentActivePlayers || {};
-                    if (Array.isArray(currentActivePlayers)) { // Safety check for data corruption
+                    let currentActivePlayers = roomDataFromRead.currentActivePlayers || {};
+                    if (Array.isArray(currentActivePlayers)) { 
                         console.error(`CRITICAL_DATA_ISSUE: currentActivePlayers in room ${roomId} is an array! Resetting.`);
                         currentActivePlayers = {}; 
                     }
 
                     const updatedActivePlayers = {
                         ...currentActivePlayers,
-                        [firebaseUID]: newPlayerObject // Add/overwrite the new/joining player
+                        [firebaseUID]: newPlayerObject 
                     };
 
                     await roomRef.update({
-                        currentActivePlayers: updatedActivePlayers // Update the whole map
+                        currentActivePlayers: updatedActivePlayers 
                     });
-                    // --- End of Modified Approach ---
-
+                    
                     playerConnections.set(ws, { roomId, playerId: firebaseUID, type: 'player' });
                     
-                    // Send success message to player (roomDataForPlayer uses the initially fetched roomDoc data)
                     const roomDataForPlayerMessage = roomDoc.data(); 
                     sendMessageToClient(ws, { type: 'PLAYER_JOIN_SUCCESS', payload: {
                         playerId: firebaseUID, playerName, roomId, 
-                        tickets: [{id: ticketId, numbers: ticketNumbers, marked:[]}], // Send full ticket numbers for the first ticket
+                        tickets: [{id: ticketId, numbers: ticketNumbers, marked:[]}], 
                         gameStatus: roomDataForPlayerMessage.gameStatus, 
                         calledNumbers: roomDataForPlayerMessage.currentNumbersCalled,
                         rules: (roomDataForPlayerMessage.rules || []).filter(r => r.isActive), 
                         adminName: roomDataForPlayerMessage.adminDisplayName
                     }});
                     
-                    // Broadcast updated player list
                     const playersSnapshotAfterUpdate = await roomRef.get(); 
                     const playersList = Object.values(playersSnapshotAfterUpdate.data().currentActivePlayers || {});
                     broadcastToRoom(roomId, { type: 'PLAYER_LIST_UPDATE', payload: { players: playersList.map(p=>({id: p.firebaseUID, name:p.playerName, ticketCount: p.ticketCount, isOnline: p.isOnline})) } }, ws);
                     break;
                 }
                 
-                // ... (ALL OTHER CASE HANDLERS: PLAYER_REQUEST_TICKET, ADMIN_APPROVE_TICKET_REQUEST, etc., remain IDENTICAL to the previous full server.js version)
-                // For brevity, only PLAYER_JOIN_ROOM is shown with the modification. Ensure all other handlers are copied from the last complete server.js response.
-                // Re-inserting the rest of the handlers from the previous version for completeness:
                 case 'PLAYER_REQUEST_TICKET': { 
                     if (!connectionInfo || connectionInfo.type !== 'player') return;
                     const { roomId, playerId: firebaseUID } = connectionInfo; 
@@ -310,7 +376,7 @@ wss.on('connection', (ws) => {
                     broadcastToRoom(roomId, { type: 'PLAYER_LIST_UPDATE', payload: { players: playersList.map(p=>({id: p.firebaseUID, name:p.playerName, ticketCount: p.ticketCount, isOnline: p.isOnline})) } });
                     break;
                 }
-                case 'ADMIN_REJECT_TICKET_REQUEST': { /* ... Identical to previous ... */ 
+                case 'ADMIN_REJECT_TICKET_REQUEST': { 
                     if (!connectionInfo || connectionInfo.type !== 'admin') return;
                     const { roomId } = connectionInfo;
                     const { requestId, targetPlayerId, reason } = payload;
@@ -321,7 +387,7 @@ wss.on('connection', (ws) => {
                     sendMessageToClient(ws, { type: 'TICKET_REQUEST_RESOLVED', payload: { requestId } });
                     break;
                 }
-                case 'ADMIN_UPDATE_RULES': { /* ... Identical to previous ... */ 
+                case 'ADMIN_UPDATE_RULES': { 
                     if (!connectionInfo || connectionInfo.type !== 'admin') return;
                     const { roomId } = connectionInfo;
                     await db.collection('rooms').doc(roomId).update({ rules: payload.rules, totalMoneyCollected: parseFloat(payload.financials.totalMoneyCollected) || 0 });
@@ -329,7 +395,7 @@ wss.on('connection', (ws) => {
                     broadcastToRoom(roomId, { type: 'RULES_UPDATED_BROADCAST', payload: { rules: payload.rules.filter(r => r.isActive), totalMoneyCollected: payload.financials.totalMoneyCollected, adminUID: connectionInfo.playerId } }, ws); 
                     break;
                 }
-                case 'ADMIN_START_GAME': { /* ... Identical to previous ... */ 
+                case 'ADMIN_START_GAME': { 
                     if (!connectionInfo || connectionInfo.type !== 'admin') return;
                     const { roomId } = connectionInfo;
                     await db.collection('rooms').doc(roomId).update({ gameStatus: "running", currentNumbersCalled: [], currentLatestCalledNumber: null, gameStartTime: FieldValue.serverTimestamp(), currentWinners: [], callingMode: payload.callingMode, autoCallInterval: payload.autoCallInterval, rules: payload.rulesConfig, totalMoneyCollected: parseFloat(payload.totalMoneyCollected) || 0 });
@@ -337,7 +403,7 @@ wss.on('connection', (ws) => {
                     if (payload.callingMode === 'auto') { clearTimeout(adminAutoCallTimers.get(roomId)); adminAutoCallTimers.set(roomId, setTimeout(() => performAutoCall(roomId), payload.autoCallInterval * 1000)); }
                     break;
                 }
-                case 'ADMIN_CALL_NUMBER': { /* ... Identical to previous ... */ 
+                case 'ADMIN_CALL_NUMBER': { 
                     if (!connectionInfo || connectionInfo.type !== 'admin') return;
                     const { roomId } = connectionInfo; const roomRef = db.collection('rooms').doc(roomId); const roomDoc = await roomRef.get();
                     if (!roomDoc.exists || roomDoc.data().gameStatus !== 'running') return;
@@ -347,20 +413,20 @@ wss.on('connection', (ws) => {
                     else { const randomIndex = Math.floor(Math.random() * availableNumbers.length); const calledNumber = availableNumbers[randomIndex]; await roomRef.update({ currentLatestCalledNumber: calledNumber, currentNumbersCalled: FieldValue.arrayUnion(calledNumber) }); broadcastToRoom(roomId, { type: 'NUMBER_CALLED', payload: { number: calledNumber, calledNumbersHistory: [...calledNumbers, calledNumber], remainingCount: availableNumbers.length - 1 } }); }
                     break;
                 }
-                case 'ADMIN_PAUSE_GAME': { /* ... Identical to previous ... */ 
+                case 'ADMIN_PAUSE_GAME': { 
                     if (!connectionInfo || connectionInfo.type !== 'admin') return;
                     const { roomId } = connectionInfo; clearTimeout(adminAutoCallTimers.get(roomId)); adminAutoCallTimers.delete(roomId);
                     await db.collection('rooms').doc(roomId).update({ gameStatus: 'paused' }); broadcastToRoom(roomId, { type: 'GAME_PAUSED', payload: { status: 'paused' } });
                     break;
                 }
-                case 'ADMIN_RESUME_GAME': { /* ... Identical to previous ... */ 
+                case 'ADMIN_RESUME_GAME': { 
                     if (!connectionInfo || connectionInfo.type !== 'admin') return;
                     const { roomId } = connectionInfo; const roomData = (await db.collection('rooms').doc(roomId).get()).data();
                     if (roomData.callingMode === 'auto') { clearTimeout(adminAutoCallTimers.get(roomId)); adminAutoCallTimers.set(roomId, setTimeout(() => performAutoCall(roomId), roomData.autoCallInterval * 1000));}
                     await db.collection('rooms').doc(roomId).update({ gameStatus: 'running' }); broadcastToRoom(roomId, { type: 'GAME_RESUMED', payload: { status: 'running' } });
                     break;
                 }
-                case 'ADMIN_STOP_GAME': { /* ... Identical to previous ... */ 
+                case 'ADMIN_STOP_GAME': { 
                     if (!connectionInfo || connectionInfo.type !== 'admin') return;
                     const { roomId } = connectionInfo; clearTimeout(adminAutoCallTimers.get(roomId)); adminAutoCallTimers.delete(roomId);
                     const roomDoc = await db.collection('rooms').doc(roomId).get(); const roomData = roomDoc.data();
@@ -369,7 +435,7 @@ wss.on('connection', (ws) => {
                     broadcastToRoom(roomId, { type: 'GAME_STOPPED', payload: { status: 'game ended by admin' } }); broadcastToRoom(roomId, { type: 'GAME_SUMMARY_BROADCAST', payload: gameSummary });
                     break;
                 }
-                case 'PLAYER_CLAIM_PRIZE': { /* ... Identical to previous ... */ 
+                case 'PLAYER_CLAIM_PRIZE': { 
                     if (!connectionInfo || connectionInfo.type !== 'player') return;
                     const { roomId, playerId: firebaseUID } = connectionInfo; const { ticketId, prizeRuleId } = payload;
                     const roomDoc = await db.collection('rooms').doc(roomId).get(); const ticketDoc = await db.collection('gameTickets').doc(ticketId).get();
@@ -386,7 +452,7 @@ wss.on('connection', (ws) => {
                     const adminWs = getAdminWs(roomId); if (adminWs) sendMessageToClient(adminWs, { type: 'NEW_PRIZE_CLAIM', payload: {id: claimId, ...claimData} });
                     break;
                 }
-                case 'ADMIN_APPROVE_PRIZE_CLAIM': { /* ... Identical to previous ... */ 
+                case 'ADMIN_APPROVE_PRIZE_CLAIM': { 
                     if (!connectionInfo || connectionInfo.type !== 'admin') return;
                     const { roomId, playerId: adminUID } = connectionInfo; const { claimId, targetPlayerId, prizeRuleId } = payload;
                     const roomRef = db.collection('rooms').doc(roomId); const claimRef = db.collection('prizeClaimsAudit').doc(claimId);
@@ -412,7 +478,7 @@ wss.on('connection', (ws) => {
                     broadcastToRoom(roomId, {type: 'WINNER_ANNOUNCEMENT', payload: {...winnerDetails, timestamp: new Date().toISOString()}}, ws); 
                     break;
                 }
-                case 'ADMIN_REJECT_PRIZE_CLAIM': { /* ... Identical to previous ... */ 
+                case 'ADMIN_REJECT_PRIZE_CLAIM': { 
                     if (!connectionInfo || connectionInfo.type !== 'admin') return;
                     const { roomId, playerId: adminUID } = connectionInfo; const { claimId, targetPlayerId, prizeName, reason } = payload;
                     await db.collection('prizeClaimsAudit').doc(claimId).update({ status: "rejected_admin", reason: reason || "Admin rejected.", reviewedAt: FieldValue.serverTimestamp(), reviewedBy: adminUID });
@@ -422,6 +488,7 @@ wss.on('connection', (ws) => {
                     sendMessageToClient(ws, { type: 'PRIZE_CLAIM_RESOLVED', payload: { claimId, status: 'rejected' } });
                     break;
                 }
+
 
                 default:
                     sendMessageToClient(ws, { type: 'ERROR', payload: { message: `Unknown message type: ${type}` } });
@@ -435,18 +502,28 @@ wss.on('connection', (ws) => {
         }
     });
 
-    ws.on('close', async () => { /* ... Identical to previous ... */ 
+    ws.on('close', async () => {
         const connectionInfo = playerConnections.get(ws);
         if (connectionInfo) {
             const { roomId, playerId, type } = connectionInfo; 
-            playerConnections.delete(ws); console.log(`${type} ${playerId} disconnected from room ${roomId}`);
+            playerConnections.delete(ws);
+            console.log(`${type} ${playerId} disconnected from room ${roomId}`);
+
             if (type === 'player') {
                 const roomRef = db.collection('rooms').doc(roomId);
                 try {
                     await db.runTransaction(async (transaction) => {
-                        const roomDoc = await transaction.get(roomRef); if (!roomDoc.exists) return;
-                        const roomData = roomDoc.data(); const currentActivePlayers = roomData.currentActivePlayers || {};
-                        if (currentActivePlayers[playerId]) { currentActivePlayers[playerId].isOnline = false; currentActivePlayers[playerId].lastSeen = FieldValue.serverTimestamp(); transaction.update(roomRef, { currentActivePlayers }); const playersList = Object.values(currentActivePlayers); broadcastToRoom(roomId, { type: 'PLAYER_LIST_UPDATE', payload: { players: playersList.map(p=>({id: p.firebaseUID, name:p.playerName, ticketCount: p.ticketCount, isOnline: p.isOnline})) } }); }
+                        const roomDoc = await transaction.get(roomRef);
+                        if (!roomDoc.exists) return;
+                        const roomData = roomDoc.data();
+                        const currentActivePlayers = roomData.currentActivePlayers || {};
+                        if (currentActivePlayers[playerId]) {
+                             currentActivePlayers[playerId].isOnline = false;
+                             currentActivePlayers[playerId].lastSeen = FieldValue.serverTimestamp();
+                            transaction.update(roomRef, { currentActivePlayers });
+                            const playersList = Object.values(currentActivePlayers);
+                            broadcastToRoom(roomId, { type: 'PLAYER_LIST_UPDATE', payload: { players: playersList.map(p=>({id: p.firebaseUID, name:p.playerName, ticketCount: p.ticketCount, isOnline: p.isOnline})) } });
+                        }
                     });
                 } catch (error) { console.error(`Error updating player disconnect for ${playerId} in ${roomId}:`, error); }
             }
@@ -458,14 +535,22 @@ wss.on('connection', (ws) => {
 // --- HTTP Routes ---
 app.get('/', (req, res) => res.send('Tambola Game Backend (Firestore) is running!'));
 app.get('/health', (req, res) => res.status(200).json({ status: 'UP', timestamp: new Date().toISOString() }));
-app.get('/debug/rooms', async (req, res) => { /* ... Identical to previous ... */ 
-    try { const roomsSnapshot = await db.collection('rooms').limit(50).get(); const allRoomsData = roomsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); res.json(allRoomsData); } catch (error) { res.status(500).send("Error fetching rooms data."); }
+app.get('/debug/rooms', async (req, res) => {
+    try {
+        const roomsSnapshot = await db.collection('rooms').limit(50).get();
+        const allRoomsData = roomsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        res.json(allRoomsData);
+    } catch (error) { res.status(500).send("Error fetching rooms data."); }
 });
 
 server.listen(PORT, () => {
     console.log(`HTTP and WebSocket server listening on ws://localhost:${PORT} (and wss for deployed)`);
 });
 
-process.on('SIGINT', () => { /* ... Identical to previous ... */ 
-    console.log('Shutting down server...'); adminAutoCallTimers.forEach(timerId => clearTimeout(timerId)); adminAutoCallTimers.clear(); wss.clients.forEach(client => client.close()); server.close(() => { console.log('Server shut down gracefully.'); process.exit(0); });
+process.on('SIGINT', () => {
+    console.log('Shutting down server...');
+    adminAutoCallTimers.forEach(timerId => clearTimeout(timerId));
+    adminAutoCallTimers.clear();
+    wss.clients.forEach(client => client.close());
+    server.close(() => { console.log('Server shut down gracefully.'); process.exit(0); });
 });
