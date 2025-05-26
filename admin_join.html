@@ -234,7 +234,7 @@
                 connectWebSocket() {
                     // **IMPORTANT**: Replace with your actual Render backend WebSocket URL
                     // Example for local testing: const wsUrl = 'ws://localhost:3000';
-                    const wsUrl = 'wss://wss://tambola-game-b2e3.onrender.com'; // e.g., wss://tambola-backend-app.onrender.com
+                    const wsUrl = 'wss://tambola-game-b2e3.onrender.com'; // e.g., wss://tambola-backend-app.onrender.com
 
                     return new Promise((resolve, reject) => {
                         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
