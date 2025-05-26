@@ -28,14 +28,17 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '18' # Or your Firebase Functions runtime version
+          node-version: '18'
 
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
 
       # Add this step to install dependencies for your functions
       - name: Install Functions Dependencies
-        run: npm --prefix functions install # This will install dependencies from functions/package.json
+        working-directory: ./functions # Ensure we are in the functions directory
+        run: |
+          if [ -f package-lock.json ]; then rm package-lock.json; fi # Remove lock file
+          npm install # This will install dependencies from functions/package.json
 
       - name: Deploy to Firebase
         run: |
