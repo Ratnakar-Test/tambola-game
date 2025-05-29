@@ -10,9 +10,15 @@ const admin = require('firebase-admin');
 // --- Firebase Admin SDK Setup ---
 const serviceAccount = require('./firebase-service-account-key.json'); // Ensure this file exists
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
-});
+try {
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+    console.log("Firebase Admin SDK initialized successfully.");
+} catch (e) {
+    console.error("Firebase Admin SDK Initialization Error:", e); 
+    process.exit(1); 
+}
 
 const db = admin.firestore();
 const FieldValue = admin.firestore.FieldValue;
@@ -116,25 +122,24 @@ function generateTambolaTicket() {
 }
 
 // --- Prize Validation ---
-function getAllNumbersOnTicket(ticketNumbers2D) { // Expects 2D array for validation logic
-    if (!Array.isArray(ticketNumbers2D) || !Array.isArray(ticketNumbers2D[0])) {
-        // If it's already in {row, values} format, adapt or expect conversion before calling
-        console.warn("getAllNumbersOnTicket received unexpected ticket format, trying to adapt.");
-        if (ticketNumbers2D[0] && ticketNumbers2D[0].hasOwnProperty('values')) {
+function getAllNumbersOnTicket(ticketNumbers2D) { 
+    if (!Array.isArray(ticketNumbers2D) || (ticketNumbers2D.length > 0 && !Array.isArray(ticketNumbers2D[0]))) {
+        if (ticketNumbers2D.length > 0 && ticketNumbers2D[0] && ticketNumbers2D[0].hasOwnProperty('values')) {
             return ticketNumbers2D.flatMap(rowObj => rowObj.values).filter(num => num !== null);
         }
-        return []; // Or throw error
+        console.warn("getAllNumbersOnTicket received unexpected ticket format:", ticketNumbers2D);
+        return []; 
     }
     return ticketNumbers2D.flat().filter(num => num !== null);
 }
 
-function getNumbersInRow(ticketNumbers2D, rowIndex) { // Expects 2D array
-    if (!Array.isArray(ticketNumbers2D) || !Array.isArray(ticketNumbers2D[0])) {
-        console.warn("getNumbersInRow received unexpected ticket format, trying to adapt.");
-        if (ticketNumbers2D[0] && ticketNumbers2D[0].hasOwnProperty('values')) {
+function getNumbersInRow(ticketNumbers2D, rowIndex) { 
+    if (!Array.isArray(ticketNumbers2D) || (ticketNumbers2D.length > 0 && !Array.isArray(ticketNumbers2D[0]))) {
+        if (ticketNumbers2D.length > 0 && ticketNumbers2D[0] && ticketNumbers2D[0].hasOwnProperty('values')) {
             const rowObj = ticketNumbers2D.find(r => r.row === rowIndex);
             return rowObj ? rowObj.values.filter(num => num !== null) : [];
         }
+        console.warn("getNumbersInRow received unexpected ticket format:", ticketNumbers2D);
         return [];
     }
     if (rowIndex < 0 || rowIndex >= ticketNumbers2D.length) return [];
@@ -152,19 +157,22 @@ function validatePrizeClaim(ticketNumbers, calledNumbers, prizeRuleName) { // ti
         case 'Top Line': return allNumbersAreCalled(getNumbersInRow(ticketNumbers, 0), calledNumbers);
         case 'Middle Line': return allNumbersAreCalled(getNumbersInRow(ticketNumbers, 1), calledNumbers);
         case 'Bottom Line': return allNumbersAreCalled(getNumbersInRow(ticketNumbers, 2), calledNumbers);
-        case 'Full House': if (allTicketNums.length !== 15 && allTicketNums.length !== 0 ) { /* tickets may have less than 15 numbers if generation is imperfect */ } return allNumbersAreCalled(allTicketNums, calledNumbers);
+        case 'Full House': return allTicketNums.length > 0 && allNumbersAreCalled(allTicketNums, calledNumbers);
         case 'Early 5': return allTicketNums.filter(num => calledNumbers.includes(num)).length >= 5;
         case 'Early 7': return allTicketNums.filter(num => calledNumbers.includes(num)).length >= 7;
-        case 'Corners': {
-            const topRowActual = getNumbersInRow(ticketNumbers, 0); const bottomRowActual = getNumbersInRow(ticketNumbers, 2);
-            // Ensure there are enough numbers in the rows to have 1st and 5th actual numbers
+        case 'Corners': { 
+            const topRowActual = getNumbersInRow(ticketNumbers, 0); 
+            const bottomRowActual = getNumbersInRow(ticketNumbers, 2);
             const actualNumbersInTopRow = topRowActual.length;
             const actualNumbersInBottomRow = bottomRowActual.length;
-            if (actualNumbersInTopRow < 5 || actualNumbersInBottomRow < 5) return false; // This condition might be too strict if rows don't always have 5 numbers
-                                                                                        // A more robust check might be first and last number of the row if less than 5.
-                                                                                        // For standard Tambola, 5 numbers per row is expected.
-            const cornerNumbers = [topRowActual[0], topRowActual[actualNumbersInTopRow -1], bottomRowActual[0], bottomRowActual[actualNumbersInBottomRow-1]];
-            return allNumbersAreCalled(cornerNumbers, calledNumbers);
+            if (actualNumbersInTopRow < 2 || actualNumbersInBottomRow < 2) return false; 
+            const cornerNumbers = [
+                topRowActual[0], 
+                topRowActual[actualNumbersInTopRow -1], 
+                bottomRowActual[0], 
+                bottomRowActual[actualNumbersInBottomRow-1] 
+            ];
+            return allNumbersAreCalled(cornerNumbers, calledNumbers); 
         }
         default: console.warn(`Unknown prize rule name for validation: ${prizeRuleName}`); return false;
     }
@@ -225,54 +233,132 @@ wss.on('connection', (ws) => {
         } catch (e) { console.error('Failed to parse message:', messageString, e); sendMessageToClient(ws, { type: 'ERROR', payload: { message: 'Invalid message format.' } }); return; }
 
         const { type, payload } = message;
-        const connectionInfo = playerConnections.get(ws);
+        const connectionInfo = playerConnections.get(ws); // This is the connection info for the *current* WebSocket message
 
-        try {
+        try { 
             switch (type) {
                 case 'ADMIN_CREATE_JOIN_ROOM': {
+                    console.log(`[ADMIN_CREATE_JOIN_ROOM] Received. Payload:`, payload); 
                     const { adminName, roomId, firebaseUID } = payload;
-                    if (!adminName || !roomId || !firebaseUID) return sendMessageToClient(ws, { type: 'ERROR', payload: { message: 'Admin name, Room ID, and Firebase UID are required.' } });
+                    if (!adminName || !roomId || !firebaseUID) {
+                        console.error("[ADMIN_CREATE_JOIN_ROOM] Validation failed: Missing adminName, roomId, or firebaseUID.");
+                        return sendMessageToClient(ws, { type: 'ERROR', payload: { message: 'Admin name, Room ID, and Firebase UID are required.' } });
+                    }
                     const roomRef = db.collection('rooms').doc(roomId);
+                    console.log(`[ADMIN_CREATE_JOIN_ROOM] Accessing roomRef: rooms/${roomId}`);
                     const roomDoc = await roomRef.get();
                     if (!roomDoc.exists) {
+                        console.log(`[ADMIN_CREATE_JOIN_ROOM] Room ${roomId} does not exist. Creating...`);
                         const newRoomData = {
                             adminDisplayName: adminName, adminUID: firebaseUID, gameStatus: "idle", createdAt: FieldValue.serverTimestamp(),
                             callingMode: "manual", autoCallInterval: 5, currentNumbersCalled: [], currentLatestCalledNumber: null,
                             rules: [], totalMoneyCollected: 0, currentActivePlayers: {}, currentWinners: []
                         };
                         await roomRef.set(newRoomData);
+                        console.log(`[ADMIN_CREATE_JOIN_ROOM] Room ${roomId} created.`);
                         playerConnections.set(ws, { roomId, playerId: firebaseUID, type: 'admin' });
                         sendMessageToClient(ws, { type: 'ROOM_JOINED_SUCCESS', payload: { roomId, role: 'admin', adminId: firebaseUID, roomDetails: newRoomData } });
                     } else {
+                        console.log(`[ADMIN_CREATE_JOIN_ROOM] Room ${roomId} exists.`);
                         const roomData = roomDoc.data();
                         if (roomData.adminUID === firebaseUID || !roomData.adminUID) {
                             playerConnections.set(ws, { roomId, playerId: firebaseUID, type: 'admin' });
-                            if (!roomData.adminUID) await roomRef.update({ adminUID: firebaseUID, adminDisplayName: adminName });
+                            if (!roomData.adminUID) {
+                                console.log(`[ADMIN_CREATE_JOIN_ROOM] Updating adminUID for existing room ${roomId}.`);
+                                await roomRef.update({ adminUID: firebaseUID, adminDisplayName: adminName });
+                            }
                             sendMessageToClient(ws, { type: 'ROOM_JOINED_SUCCESS', payload: { roomId, role: 'admin', adminId: firebaseUID, roomDetails: roomData } });
-                        } else {
-                            sendMessageToClient(ws, { type: 'ERROR', payload: { message: `Room ${roomId} managed by another admin.` } });
+                        } else { 
+                            console.warn(`[ADMIN_CREATE_JOIN_ROOM] Room ${roomId} managed by another admin (${roomData.adminUID}). Denying access to ${firebaseUID}.`);
+                            sendMessageToClient(ws, { type: 'ERROR', payload: { message: `Room ${roomId} managed by another admin.` } }); 
                         }
                     }
                     break;
                 }
                 case 'ADMIN_SUBSCRIBE_TO_ROOM': {
+                    console.log(`[ADMIN_SUBSCRIBE_TO_ROOM] Received. Payload:`, payload);
                     const { roomId, adminUID } = payload;
-                    let currentConnectionInfo = playerConnections.get(ws); 
-                    if (!currentConnectionInfo || currentConnectionInfo.type !== 'admin' || currentConnectionInfo.playerId !== adminUID ) {
-                        const adminClientInfo = Array.from(playerConnections.values()).find(ci => ci.playerId === adminUID && ci.roomId === roomId && ci.type === 'admin');
-                        if(adminClientInfo){ playerConnections.set(ws, { roomId, playerId: adminUID, type: 'admin' }); } 
-                        else { if (!currentConnectionInfo) playerConnections.set(ws, { roomId, playerId: adminUID, type: 'admin' }); else return sendMessageToClient(ws, {type: 'ERROR', payload: {message: 'Admin auth mismatch or invalid subscription.'}}); }
-                    }
-                    const roomRef = db.collection('rooms').doc(roomId); const roomDoc = await roomRef.get();
+                    // For ADMIN_SUBSCRIBE, we trust the payload for adminUID to set/update the connection info
+                    playerConnections.set(ws, { roomId, playerId: adminUID, type: 'admin' });
+
+                    const roomRef = db.collection('rooms').doc(roomId);
+                    const roomDoc = await roomRef.get();
                     if (roomDoc.exists) {
-                         sendMessageToClient(ws, { type: 'ROOM_STATE_UPDATE', payload: roomDoc.data() });
+                        const roomData = roomDoc.data();
+                        // Verify the adminUID from payload matches the room's adminUID
+                        if (roomData.adminUID !== adminUID) {
+                            console.warn(`[ADMIN_SUBSCRIBE_TO_ROOM] Mismatch: Room ${roomId} admin is ${roomData.adminUID}, subscription attempt by ${adminUID}`);
+                            playerConnections.delete(ws); // Clean up potentially incorrect association
+                            return sendMessageToClient(ws, {type: 'ERROR', payload: {message: 'Admin UID mismatch for room subscription.'}});
+                        }
+                         sendMessageToClient(ws, { type: 'ROOM_STATE_UPDATE', payload: roomData });
                          const ticketRequestsSnapshot = await db.collection('rooms').doc(roomId).collection('ticketRequests').where('status', '==', 'pending').orderBy('requestTimestamp', 'desc').get();
                          const ticketRequests = ticketRequestsSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()}));
                          sendMessageToClient(ws, {type: 'ALL_TICKET_REQUESTS_UPDATE', payload: {requests: ticketRequests}});
                          const prizeClaimsSnapshot = await db.collection('prizeClaimsAudit').where('roomId', '==', roomId).where('status', '==', 'pending_admin_approval').orderBy('claimTimestamp', 'desc').get();
                          const prizeClaims = prizeClaimsSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()}));
                          sendMessageToClient(ws, {type: 'ALL_PRIZE_CLAIMS_UPDATE', payload: {claims: prizeClaims}});
-                    } else { sendMessageToClient(ws, { type: 'ERROR', payload: { message: 'Room not found.' } }); }
+                    } else { 
+                        console.error(`[ADMIN_SUBSCRIBE_TO_ROOM] Room ${roomId} not found for admin ${adminUID}.`);
+                        sendMessageToClient(ws, { type: 'ERROR', payload: { message: 'Room not found for subscription.' } }); 
+                    }
+                    break;
+                }
+
+                case 'PLAYER_SUBSCRIBE_TO_ROOM': { // THIS HANDLER IS NOW INCLUDED
+                    const { roomId, firebaseUID } = payload; 
+
+                    if (!roomId || !firebaseUID) {
+                        console.error(`[PLAYER_SUBSCRIBE_TO_ROOM] Error: Missing roomId or firebaseUID in payload. Payload:`, payload);
+                        return sendMessageToClient(ws, { type: 'ERROR', payload: { message: 'Subscription failed: Room ID or Player ID missing.' } });
+                    }
+
+                    playerConnections.set(ws, { roomId, playerId: firebaseUID, type: 'player' });
+                    console.log(`[PLAYER_SUBSCRIBE_TO_ROOM] Player ${firebaseUID} attempting to subscribe to room ${roomId}`);
+
+                    const roomRef = db.collection('rooms').doc(roomId);
+                    const roomDoc = await roomRef.get();
+
+                    if (roomDoc.exists) {
+                        const roomData = roomDoc.data();
+                        if (roomData.currentActivePlayers && roomData.currentActivePlayers[firebaseUID]) {
+                            
+                            const playerOnlineUpdatePath = `currentActivePlayers.${firebaseUID}.isOnline`;
+                            const playerLastSeenPath = `currentActivePlayers.${firebaseUID}.lastSeen`;
+                            await roomRef.update({
+                                [playerOnlineUpdatePath]: true,
+                                [playerLastSeenPath]: FieldValue.serverTimestamp()
+                            });
+                            console.log(`[PLAYER_SUBSCRIBE_TO_ROOM] Player ${firebaseUID} marked as online in room ${roomId}. Sending initial state.`);
+
+                            sendMessageToClient(ws, {
+                                type: 'ROOM_STATE_UPDATE_FOR_PLAYER', 
+                                payload: {
+                                    gameStatus: roomData.gameStatus,
+                                    currentNumbersCalled: roomData.currentNumbersCalled || [],
+                                    latestCalledNumber: roomData.currentLatestCalledNumber || null,
+                                    rules: (roomData.rules || []).filter(r => r.isActive),
+                                    adminName: roomData.adminDisplayName, 
+                                    players: Object.values(roomData.currentActivePlayers || {}).map(p=>({
+                                        id: p.firebaseUID, name:p.playerName, ticketCount: p.ticketCount, isOnline: p.isOnline
+                                    }))
+                                }
+                            });
+
+                            const playersSnapshotAfterUpdate = await roomRef.get(); 
+                            const playersList = Object.values(playersSnapshotAfterUpdate.data().currentActivePlayers || {});
+                            broadcastToRoom(roomId, { type: 'PLAYER_LIST_UPDATE', payload: { players: playersList.map(p=>({id: p.firebaseUID, name:p.playerName, ticketCount: p.ticketCount, isOnline: p.isOnline})) } });
+
+                        } else {
+                            console.error(`[PLAYER_SUBSCRIBE_TO_ROOM] Error: Player ${firebaseUID} not found in room ${roomId}'s active players.`);
+                            playerConnections.delete(ws); 
+                            sendMessageToClient(ws, { type: 'ERROR', payload: { message: 'Subscription failed: You are not part of this room.' } });
+                        }
+                    } else {
+                        console.error(`[PLAYER_SUBSCRIBE_TO_ROOM] Error: Room ${roomId} not found during player subscription.`);
+                        playerConnections.delete(ws); 
+                        sendMessageToClient(ws, { type: 'ERROR', payload: { message: 'Subscription failed: Room not found.' } });
+                    }
                     break;
                 }
 
@@ -286,7 +372,6 @@ wss.on('connection', (ws) => {
                     
                     try {
                         // console.log(`[PLAYER_JOIN_ROOM] Attempting to join. Room: ${roomId}, Player: ${playerName}, UID: ${firebaseUID}`);
-
                         const roomDoc = await roomRef.get(); 
                         
                         if (!roomDoc.exists || !["idle", "running", "paused"].includes(roomDoc.data().gameStatus) ) {
@@ -295,40 +380,28 @@ wss.on('connection', (ws) => {
                         }
                         // console.log("[PLAYER_JOIN_ROOM] Room document exists and is joinable.");
 
-                        const ticketNumbers2D = generateTambolaTicket(); // Original 2D array
+                        const ticketNumbers2D = generateTambolaTicket(); 
                         const ticketId = generateUniqueId();
                         
-                        // Restructure ticket numbers for Firestore storage in gameTickets
                         const numbersToWriteToFirestore = ticketNumbers2D.map((rowArray, rowIndex) => ({
                             row: rowIndex,
                             values: rowArray 
                         }));
 
                         const gameTicketData = {
-                            userId: firebaseUID, 
-                            playerName, 
-                            roomId, 
-                            numbers: numbersToWriteToFirestore, // Store the restructured data
+                            userId: firebaseUID, playerName, roomId, numbers: numbersToWriteToFirestore, 
                             createdAt: FieldValue.serverTimestamp()
                         };
-                        // console.log("[PLAYER_JOIN_ROOM] gameTicketData to be written:", JSON.stringify(gameTicketData, null, 2));
                         await db.collection('gameTickets').doc(ticketId).set(gameTicketData);
-                        // console.log("[PLAYER_JOIN_ROOM] gameTicketData successfully written.");
 
                         const newPlayerData = {
-                            playerName,
-                            ticketCount: 1,
-                            lastSeen: FieldValue.serverTimestamp(),
-                            tickets: [{ id: ticketId }], 
-                            isOnline: true,
-                            firebaseUID
+                            playerName, ticketCount: 1, lastSeen: FieldValue.serverTimestamp(),
+                            tickets: [{ id: ticketId }], isOnline: true, firebaseUID
                         };
                         
                         await db.runTransaction(async (transaction) => {
                             const freshRoomDoc = await transaction.get(roomRef);
-                            if (!freshRoomDoc.exists) {
-                                throw new Error("Room disappeared during transaction!");
-                            }
+                            if (!freshRoomDoc.exists) { throw new Error("Room disappeared during transaction!"); }
                             const roomData = freshRoomDoc.data();
                             let currentActivePlayers = roomData.currentActivePlayers || {};
                             if (Array.isArray(currentActivePlayers)) {
@@ -339,14 +412,11 @@ wss.on('connection', (ws) => {
                             transaction.update(roomRef, { currentActivePlayers: currentActivePlayers });
                         });
                         
-                        // console.log("[PLAYER_JOIN_ROOM] Transaction to update currentActivePlayers successful.");
-                        
                         playerConnections.set(ws, { roomId, playerId: firebaseUID, type: 'player' });
                         
                         const roomDataForPlayerMessage = roomDoc.data(); 
                         sendMessageToClient(ws, { type: 'PLAYER_JOIN_SUCCESS', payload: {
                             playerId: firebaseUID, playerName, roomId, 
-                            // Send the original 2D ticketNumbers to the client for easy rendering initially
                             tickets: [{id: ticketId, numbers: ticketNumbers2D, marked:[]}], 
                             gameStatus: roomDataForPlayerMessage.gameStatus, 
                             calledNumbers: roomDataForPlayerMessage.currentNumbersCalled,
@@ -358,7 +428,7 @@ wss.on('connection', (ws) => {
                         const playersList = Object.values(playersSnapshotAfterUpdate.data().currentActivePlayers || {});
                         broadcastToRoom(roomId, { type: 'PLAYER_LIST_UPDATE', payload: { players: playersList.map(p=>({id: p.firebaseUID, name:p.playerName, ticketCount: p.ticketCount, isOnline: p.isOnline})) } }, ws);
                     
-                    } catch (error) {
+                    } catch (error) { 
                         console.error(`[PLAYER_JOIN_ROOM] CRITICAL ERROR for room ${roomId}, player ${firebaseUID}:`, error);
                         sendMessageToClient(ws, { type: 'ERROR', payload: { message: `Server error joining room: ${error.message}` } });
                     }
@@ -389,10 +459,9 @@ wss.on('connection', (ws) => {
                     const { requestId, targetPlayerId } = payload; 
                     const requestRef = db.collection('rooms').doc(roomId).collection('ticketRequests').doc(requestId);
                     const roomRef = db.collection('rooms').doc(roomId);
-                    const ticketNumbers2D_approved = generateTambolaTicket(); // Original 2D array
+                    const ticketNumbers2D_approved = generateTambolaTicket(); 
                     const ticketId_approved = generateUniqueId();
                     
-                    // Restructure for Firestore
                     const numbersToWriteToFirestore_approved = ticketNumbers2D_approved.map((rowArray, rowIndex) => ({
                         row: rowIndex,
                         values: rowArray
@@ -408,10 +477,8 @@ wss.on('connection', (ws) => {
                         
                         transaction.update(requestRef, { status: 'approved', approvedAt: FieldValue.serverTimestamp(), ticketId: ticketId_approved });
                         transaction.set(db.collection('gameTickets').doc(ticketId_approved), { 
-                            userId: targetPlayerId, 
-                            playerName: playerDoc.playerName, 
-                            roomId, 
-                            numbers: numbersToWriteToFirestore_approved, // Store restructured
+                            userId: targetPlayerId, playerName: playerDoc.playerName, roomId, 
+                            numbers: numbersToWriteToFirestore_approved, 
                             createdAt: FieldValue.serverTimestamp() 
                         });
                         const playerUpdatePath = `currentActivePlayers.${targetPlayerId}`;
@@ -425,7 +492,7 @@ wss.on('connection', (ws) => {
 
                     const targetPlayerWs = Array.from(playerConnections.entries()).find(([_,val])=> val.playerId === targetPlayerId && val.roomId === roomId)?.[0];
                     if (targetPlayerWs) sendMessageToClient(targetPlayerWs, { type: 'TICKET_APPROVED', payload: { 
-                        ticket: {id: ticketId_approved, numbers: ticketNumbers2D_approved, marked: []}, // Send 2D to client
+                        ticket: {id: ticketId_approved, numbers: ticketNumbers2D_approved, marked: []}, 
                         allTickets: updatedPlayerTickets 
                     }});
                     sendMessageToClient(ws, { type: 'ADMIN_ACTION_SUCCESS', payload: { message: `Ticket approved for ${finalRoomSnapshot.data().currentActivePlayers[targetPlayerId].playerName}` } });
@@ -500,23 +567,14 @@ wss.on('connection', (ws) => {
                     if (!roomDoc.exists || !ticketDoc.exists || roomDoc.data().gameStatus !== 'running') return sendMessageToClient(ws, {type: 'ERROR', payload: {message: 'Cannot claim now.'}});
                     
                     const roomData = roomDoc.data(); 
-                    const ticketDataFromDb = ticketDoc.data(); // This is {row, values} format
+                    const ticketDataFromDb = ticketDoc.data(); 
                     
-                    // Convert ticketDataFromDb.numbers (Array of {row, values}) back to 2D array for validation function
                     let ticketNumbersForValidation = Array(3).fill(null).map(() => Array(9).fill(null));
                     if(Array.isArray(ticketDataFromDb.numbers) && ticketDataFromDb.numbers[0] && ticketDataFromDb.numbers[0].hasOwnProperty('values')) {
-                        ticketDataFromDb.numbers.forEach(rowObj => {
-                            if(rowObj.row < 3) { // Basic boundary check
-                                ticketNumbersForValidation[rowObj.row] = rowObj.values;
-                            }
-                        });
-                    } else {
-                        console.warn("Ticket numbers from DB not in expected {row, values} format for claim validation", ticketDataFromDb.numbers);
-                        // Fallback or error if format is wrong. For now, proceed assuming it might be old format for a moment, or empty.
-                        if(Array.isArray(ticketDataFromDb.numbers) && Array.isArray(ticketDataFromDb.numbers[0])) {
-                           ticketNumbersForValidation = ticketDataFromDb.numbers; // Assume old format if conversion fails
-                        }
-                    }
+                        ticketDataFromDb.numbers.forEach(rowObj => { if(rowObj.row < 3) ticketNumbersForValidation[rowObj.row] = rowObj.values; });
+                    } else if (Array.isArray(ticketDataFromDb.numbers) && (ticketDataFromDb.numbers.length === 0 || Array.isArray(ticketDataFromDb.numbers[0]))) { 
+                       ticketNumbersForValidation = ticketDataFromDb.numbers; 
+                    } else { console.warn("Ticket numbers from DB not in expected format for claim validation", ticketDataFromDb.numbers); }
 
                     const ruleToClaim = (roomData.rules || []).find(r => r.id === prizeRuleId && r.isActive);
                     if (!ruleToClaim) return sendMessageToClient(ws, {type: 'ERROR', payload: {message: 'Rule not active or found.'}});
@@ -555,8 +613,7 @@ wss.on('connection', (ws) => {
                     if (targetPlayerWs) sendMessageToClient(targetPlayerWs, { type: 'CLAIM_STATUS_UPDATE', payload: { claimId, prizeName: approvedClaimData.prizeName, status: 'approved', coinsAwarded: approvedClaimData.coinsAwarded } });
                     sendMessageToClient(ws, { type: 'ADMIN_ACTION_SUCCESS', payload: { message: `Prize '${approvedClaimData.prizeName}' approved.` } });
                     sendMessageToClient(ws, { type: 'PRIZE_CLAIM_RESOLVED', payload: { claimId, status: 'approved', winnerDetails: approvedClaimData } });
-                    // Ensure timestamp is a simple string for JSON over WebSocket, or client handles Firebase Timestamp object
-                    const winnerAnnouncementPayload = {...winnerDetails, timestamp: new Date().toISOString()}; // Convert Firebase timestamp for broadcast
+                    const winnerAnnouncementPayload = {...approvedClaimData, timestamp: new Date().toISOString()};
                     broadcastToRoom(roomId, {type: 'WINNER_ANNOUNCEMENT', payload: winnerAnnouncementPayload }, ws); 
                     break;
                 }
@@ -576,8 +633,8 @@ wss.on('connection', (ws) => {
             }
         } catch (error) {
             console.error(`Error processing ${type} for ${connectionInfo ? connectionInfo.playerId : 'unknown client'}:`, error.message, payload);
-            sendMessageToClient(ws, { type: 'ERROR', payload: { message: error.message || `Server error processing ${type}.` } });
-            if (connectionInfo && connectionInfo.type === 'admin' && (type.startsWith("ADMIN_APPROVE") || type.startsWith("ADMIN_REJECT"))) {
+            sendMessageToClient(ws, { type: 'ERROR', payload: { message: error.message || `Server error processing request type ${type}. Please try again.` } });
+            if (connectionInfo && connectionInfo.type === 'admin' && (type.startsWith("ADMIN_APPROVE") || type.startsWith("ADMIN_REJECT") || type.startsWith("ADMIN_UPDATE") || type.startsWith("ADMIN_START"))) {
                 sendMessageToClient(ws, {type: 'ADMIN_ACTION_FAIL', payload: {message: error.message || "Action failed on server."}});
             }
         }
