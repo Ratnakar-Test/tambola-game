@@ -207,13 +207,10 @@ wss.on('connection', (ws) => {
                     });
 
                     const roomDataFromRead = roomDoc.data(); 
-                    const newPlayerObject = {
-                        playerName,
-                        ticketCount: 1,
-                        lastSeen: FieldValue.serverTimestamp(),
-                        // tickets: [{ id: ticketId }], // <<< TEMPORARILY COMMENTED OUT FOR DIAGNOSIS
-                        isOnline: true,
-                        firebaseUID
+                   const newPlayerObject = {
+    playerName: playerName, // Ensure this is definitely a string
+    isOnline: true
+};
                     };
 
                     let currentActivePlayers = roomDataFromRead.currentActivePlayers || {};
