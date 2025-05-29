@@ -188,7 +188,10 @@ wss.on('connection', (ws) => {
                     break;
                 }
 
-             case 'PLAYER_JOIN_ROOM': {
+            // server.js
+// ... (keep all other code the same) ...
+
+                case 'PLAYER_JOIN_ROOM': {
                     const { playerName, roomId, firebaseUID } = payload;
                     if (!playerName || !roomId || !firebaseUID) {
                         return sendMessageToClient(ws, { type: 'ERROR', payload: { message: 'Player details incomplete.' } });
@@ -211,41 +214,51 @@ wss.on('connection', (ws) => {
                         const ticketId = generateUniqueId();
                         
                         const gameTicketData = {
-                            userId: firebaseUID, 
-                            playerName, 
-                            roomId, 
-                            numbers: ticketNumbers, // This is a 2D array, fine for a new document's top-level field
+                            userId: firebaseUID, playerName, roomId, numbers: ticketNumbers,
                             createdAt: FieldValue.serverTimestamp()
                         };
-                        console.log("[PLAYER_JOIN_ROOM] gameTicketData to be written:", JSON.stringify(gameTicketData, null, 2));
+                        // console.log("[PLAYER_JOIN_ROOM] gameTicketData to be written:", JSON.stringify(gameTicketData, null, 2));
                         await db.collection('gameTickets').doc(ticketId).set(gameTicketData);
-                        console.log("[PLAYER_JOIN_ROOM] gameTicketData successfully written.");
-
+                        // console.log("[PLAYER_JOIN_ROOM] gameTicketData successfully written.");
 
                         const newPlayerData = {
                             playerName,
                             ticketCount: 1,
-                            lastSeen: FieldValue.serverTimestamp(), // This will appear as an object in logs, that's normal
+                            lastSeen: FieldValue.serverTimestamp(),
                             tickets: [{ id: ticketId }], 
                             isOnline: true,
                             firebaseUID
                         };
-                        // Log the object that will be part of the update to currentActivePlayers
-                        console.log("[PLAYER_JOIN_ROOM] newPlayerData for currentActivePlayers map:", JSON.stringify(newPlayerData, null, 2));
-
-                        const updatePayloadForRoom = { 
-                            currentActivePlayers: {
-                                [firebaseUID]: newPlayerData 
-                            } 
-                        };
-                        // Log the exact payload for roomRef.set with merge
-                        console.log("[PLAYER_JOIN_ROOM] Payload for roomRef.set with merge:true :", JSON.stringify(updatePayloadForRoom, null, 2));
+                        // console.log("[PLAYER_JOIN_ROOM] newPlayerData for currentActivePlayers map:", JSON.stringify(newPlayerData, null, 2));
                         
-                        await roomRef.set(updatePayloadForRoom, { merge: true });
-                        console.log("[PLAYER_JOIN_ROOM] roomRef.set with merge:true successful.");
+                        // **MODIFIED SECTION START**
+                        // Explicitly ensure currentActivePlayers is a map and update it
+                        await db.runTransaction(async (transaction) => {
+                            const freshRoomDoc = await transaction.get(roomRef);
+                            if (!freshRoomDoc.exists) {
+                                throw new Error("Room disappeared during transaction!");
+                            }
+                            const roomData = freshRoomDoc.data();
+                            let currentActivePlayers = roomData.currentActivePlayers || {};
+
+                            // Defensive check: if it's an array, reset to map (should not happen with proper init)
+                            if (Array.isArray(currentActivePlayers)) {
+                                console.warn(`[PLAYER_JOIN_ROOM] currentActivePlayers was an array in room ${roomId}. Resetting to map.`);
+                                currentActivePlayers = {};
+                            }
+                            
+                            currentActivePlayers[firebaseUID] = newPlayerData;
+                            
+                            // console.log("[PLAYER_JOIN_ROOM] Object to be written to currentActivePlayers field:", JSON.stringify(currentActivePlayers, null, 2));
+                            transaction.update(roomRef, { currentActivePlayers: currentActivePlayers });
+                        });
+                        // **MODIFIED SECTION END**
+                        
+                        console.log("[PLAYER_JOIN_ROOM] Transaction to update currentActivePlayers successful.");
                         
                         playerConnections.set(ws, { roomId, playerId: firebaseUID, type: 'player' });
                         
+                        // Use roomDoc.data() (from before transaction for this part) for the initial state sent to the player
                         const roomDataForPlayerMessage = roomDoc.data(); 
                         sendMessageToClient(ws, { type: 'PLAYER_JOIN_SUCCESS', payload: {
                             playerId: firebaseUID, playerName, roomId, 
@@ -262,13 +275,12 @@ wss.on('connection', (ws) => {
                     
                     } catch (error) {
                         console.error(`[PLAYER_JOIN_ROOM] CRITICAL ERROR for room ${roomId}, player ${firebaseUID}:`, error);
-                        // Log the error object itself for more details if possible
                         console.error("[PLAYER_JOIN_ROOM] Full error object:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
                         sendMessageToClient(ws, { type: 'ERROR', payload: { message: `Server error joining room: ${error.message}` } });
                     }
                     break;
                 }
-                case 'PLAYER_REQUEST_TICKET': { 
+// ... (keep all other code the same in server.js) ...    case 'PLAYER_REQUEST_TICKET': { 
                     if (!connectionInfo || connectionInfo.type !== 'player') return;
                     const { roomId, playerId: firebaseUID } = connectionInfo; 
                     const roomRef = db.collection('rooms').doc(roomId);
