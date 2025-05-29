@@ -188,64 +188,72 @@ wss.on('connection', (ws) => {
                     break;
                 }
 
-                case 'PLAYER_JOIN_ROOM': {
+               case 'PLAYER_JOIN_ROOM': {
                     const { playerName, roomId, firebaseUID } = payload;
-                    if (!playerName || !roomId || !firebaseUID) return sendMessageToClient(ws, { type: 'ERROR', payload: { message: 'Player details incomplete.' } });
+                    if (!playerName || !roomId || !firebaseUID) {
+                        return sendMessageToClient(ws, { type: 'ERROR', payload: { message: 'Player details incomplete.' } });
+                    }
                     
                     const roomRef = db.collection('rooms').doc(roomId);
-                    const roomDoc = await roomRef.get(); 
                     
-                    if (!roomDoc.exists || !["idle", "running", "paused"].includes(roomDoc.data().gameStatus) ) {
-                        return sendMessageToClient(ws, { type: 'ERROR', payload: { message: 'Room not found or not joinable at this moment.' } });
+                    try {
+                        const roomDoc = await roomRef.get(); 
+                        
+                        if (!roomDoc.exists || !["idle", "running", "paused"].includes(roomDoc.data().gameStatus) ) {
+                            return sendMessageToClient(ws, { type: 'ERROR', payload: { message: 'Room not found or not joinable at this moment.' } });
+                        }
+
+                        const ticketNumbers = generateTambolaTicket();
+                        const ticketId = generateUniqueId();
+                        
+                        // 1. Write to gameTickets collection
+                        await db.collection('gameTickets').doc(ticketId).set({
+                            userId: firebaseUID, playerName, roomId, numbers: ticketNumbers, createdAt: FieldValue.serverTimestamp()
+                        });
+
+                        // 2. Define the new player object with all intended fields
+                        const newPlayerData = {
+                            playerName,
+                            ticketCount: 1,
+                            lastSeen: FieldValue.serverTimestamp(),
+                            tickets: [{ id: ticketId }], // Storing ticket reference
+                            isOnline: true,
+                            firebaseUID
+                        };
+
+                        // 3. Update the rooms document using set with merge
+                        // This ensures currentActivePlayers is treated as a map and merges the new player.
+                        await roomRef.set({ 
+                            currentActivePlayers: {
+                                [firebaseUID]: newPlayerData // Add new player under their UID
+                            } 
+                        }, { merge: true }); // merge:true is crucial here
+                        
+                        playerConnections.set(ws, { roomId, playerId: firebaseUID, type: 'player' });
+                        
+                        // Use roomDoc.data() for the initial state sent to the player, as it was before they were added.
+                        const roomDataForPlayerMessage = roomDoc.data(); 
+                        sendMessageToClient(ws, { type: 'PLAYER_JOIN_SUCCESS', payload: {
+                            playerId: firebaseUID, playerName, roomId, 
+                            tickets: [{id: ticketId, numbers: ticketNumbers, marked:[]}], // Send full ticket details for the first ticket
+                            gameStatus: roomDataForPlayerMessage.gameStatus, 
+                            calledNumbers: roomDataForPlayerMessage.currentNumbersCalled,
+                            rules: (roomDataForPlayerMessage.rules || []).filter(r => r.isActive), 
+                            adminName: roomDataForPlayerMessage.adminDisplayName
+                        }});
+                        
+                        // For broadcasting the updated player list, re-fetch the room document
+                        // to get the absolute latest currentActivePlayers map.
+                        const playersSnapshotAfterUpdate = await roomRef.get(); 
+                        const playersList = Object.values(playersSnapshotAfterUpdate.data().currentActivePlayers || {});
+                        broadcastToRoom(roomId, { type: 'PLAYER_LIST_UPDATE', payload: { players: playersList.map(p=>({id: p.firebaseUID, name:p.playerName, ticketCount: p.ticketCount, isOnline: p.isOnline})) } }, ws);
+                    
+                    } catch (error) {
+                        console.error(`PLAYER_JOIN_ROOM Error for room ${roomId}, player ${firebaseUID}:`, error);
+                        sendMessageToClient(ws, { type: 'ERROR', payload: { message: `Server error joining room: ${error.message}` } });
                     }
-
-                    const ticketNumbers = generateTambolaTicket();
-                    const ticketId = generateUniqueId();
-                    
-                    await db.collection('gameTickets').doc(ticketId).set({
-                        userId: firebaseUID, playerName, roomId, numbers: ticketNumbers, createdAt: FieldValue.serverTimestamp()
-                    });
-
-                    const roomDataFromRead = roomDoc.data(); 
-                   const newPlayerObject = {
-    playerName: playerName, // Ensure this is definitely a string
-    isOnline: true
-};
-                    };
-
-                    let currentActivePlayers = roomDataFromRead.currentActivePlayers || {};
-                    if (Array.isArray(currentActivePlayers)) { 
-                        console.error(`CRITICAL_DATA_ISSUE: currentActivePlayers in room ${roomId} is an array! Resetting.`);
-                        currentActivePlayers = {}; 
-                    }
-
-                    const updatedActivePlayers = {
-                        ...currentActivePlayers,
-                        [firebaseUID]: newPlayerObject 
-                    };
-
-                    await roomRef.update({
-                        currentActivePlayers: updatedActivePlayers 
-                    });
-                    
-                    playerConnections.set(ws, { roomId, playerId: firebaseUID, type: 'player' });
-                    
-                    const roomDataForPlayerMessage = roomDoc.data(); 
-                    sendMessageToClient(ws, { type: 'PLAYER_JOIN_SUCCESS', payload: {
-                        playerId: firebaseUID, playerName, roomId, 
-                        tickets: [{id: ticketId, numbers: ticketNumbers, marked:[]}], 
-                        gameStatus: roomDataForPlayerMessage.gameStatus, 
-                        calledNumbers: roomDataForPlayerMessage.currentNumbersCalled,
-                        rules: (roomDataForPlayerMessage.rules || []).filter(r => r.isActive), 
-                        adminName: roomDataForPlayerMessage.adminDisplayName
-                    }});
-                    
-                    const playersSnapshotAfterUpdate = await roomRef.get(); 
-                    const playersList = Object.values(playersSnapshotAfterUpdate.data().currentActivePlayers || {});
-                    broadcastToRoom(roomId, { type: 'PLAYER_LIST_UPDATE', payload: { players: playersList.map(p=>({id: p.firebaseUID, name:p.playerName, ticketCount: p.ticketCount, isOnline: p.isOnline})) } }, ws);
                     break;
-                }
-                
+                }                
                 case 'PLAYER_REQUEST_TICKET': { 
                     if (!connectionInfo || connectionInfo.type !== 'player') return;
                     const { roomId, playerId: firebaseUID } = connectionInfo; 
