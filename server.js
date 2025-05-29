@@ -188,7 +188,7 @@ wss.on('connection', (ws) => {
                     break;
                 }
 
-               case 'PLAYER_JOIN_ROOM': {
+             case 'PLAYER_JOIN_ROOM': {
                     const { playerName, roomId, firebaseUID } = payload;
                     if (!playerName || !roomId || !firebaseUID) {
                         return sendMessageToClient(ws, { type: 'ERROR', payload: { message: 'Player details incomplete.' } });
@@ -197,63 +197,77 @@ wss.on('connection', (ws) => {
                     const roomRef = db.collection('rooms').doc(roomId);
                     
                     try {
+                        console.log(`[PLAYER_JOIN_ROOM] Attempting to join. Room: ${roomId}, Player: ${playerName}, UID: ${firebaseUID}`);
+
                         const roomDoc = await roomRef.get(); 
                         
                         if (!roomDoc.exists || !["idle", "running", "paused"].includes(roomDoc.data().gameStatus) ) {
+                            console.log(`[PLAYER_JOIN_ROOM] Room not found or not joinable. Status: ${roomDoc.exists ? roomDoc.data().gameStatus : 'N/A'}`);
                             return sendMessageToClient(ws, { type: 'ERROR', payload: { message: 'Room not found or not joinable at this moment.' } });
                         }
+                        console.log("[PLAYER_JOIN_ROOM] Room document exists and is joinable.");
 
                         const ticketNumbers = generateTambolaTicket();
                         const ticketId = generateUniqueId();
                         
-                        // 1. Write to gameTickets collection
-                        await db.collection('gameTickets').doc(ticketId).set({
-                            userId: firebaseUID, playerName, roomId, numbers: ticketNumbers, createdAt: FieldValue.serverTimestamp()
-                        });
+                        const gameTicketData = {
+                            userId: firebaseUID, 
+                            playerName, 
+                            roomId, 
+                            numbers: ticketNumbers, // This is a 2D array, fine for a new document's top-level field
+                            createdAt: FieldValue.serverTimestamp()
+                        };
+                        console.log("[PLAYER_JOIN_ROOM] gameTicketData to be written:", JSON.stringify(gameTicketData, null, 2));
+                        await db.collection('gameTickets').doc(ticketId).set(gameTicketData);
+                        console.log("[PLAYER_JOIN_ROOM] gameTicketData successfully written.");
 
-                        // 2. Define the new player object with all intended fields
+
                         const newPlayerData = {
                             playerName,
                             ticketCount: 1,
-                            lastSeen: FieldValue.serverTimestamp(),
-                            tickets: [{ id: ticketId }], // Storing ticket reference
+                            lastSeen: FieldValue.serverTimestamp(), // This will appear as an object in logs, that's normal
+                            tickets: [{ id: ticketId }], 
                             isOnline: true,
                             firebaseUID
                         };
+                        // Log the object that will be part of the update to currentActivePlayers
+                        console.log("[PLAYER_JOIN_ROOM] newPlayerData for currentActivePlayers map:", JSON.stringify(newPlayerData, null, 2));
 
-                        // 3. Update the rooms document using set with merge
-                        // This ensures currentActivePlayers is treated as a map and merges the new player.
-                        await roomRef.set({ 
+                        const updatePayloadForRoom = { 
                             currentActivePlayers: {
-                                [firebaseUID]: newPlayerData // Add new player under their UID
+                                [firebaseUID]: newPlayerData 
                             } 
-                        }, { merge: true }); // merge:true is crucial here
+                        };
+                        // Log the exact payload for roomRef.set with merge
+                        console.log("[PLAYER_JOIN_ROOM] Payload for roomRef.set with merge:true :", JSON.stringify(updatePayloadForRoom, null, 2));
+                        
+                        await roomRef.set(updatePayloadForRoom, { merge: true });
+                        console.log("[PLAYER_JOIN_ROOM] roomRef.set with merge:true successful.");
                         
                         playerConnections.set(ws, { roomId, playerId: firebaseUID, type: 'player' });
                         
-                        // Use roomDoc.data() for the initial state sent to the player, as it was before they were added.
                         const roomDataForPlayerMessage = roomDoc.data(); 
                         sendMessageToClient(ws, { type: 'PLAYER_JOIN_SUCCESS', payload: {
                             playerId: firebaseUID, playerName, roomId, 
-                            tickets: [{id: ticketId, numbers: ticketNumbers, marked:[]}], // Send full ticket details for the first ticket
+                            tickets: [{id: ticketId, numbers: ticketNumbers, marked:[]}], 
                             gameStatus: roomDataForPlayerMessage.gameStatus, 
                             calledNumbers: roomDataForPlayerMessage.currentNumbersCalled,
                             rules: (roomDataForPlayerMessage.rules || []).filter(r => r.isActive), 
                             adminName: roomDataForPlayerMessage.adminDisplayName
                         }});
                         
-                        // For broadcasting the updated player list, re-fetch the room document
-                        // to get the absolute latest currentActivePlayers map.
                         const playersSnapshotAfterUpdate = await roomRef.get(); 
                         const playersList = Object.values(playersSnapshotAfterUpdate.data().currentActivePlayers || {});
                         broadcastToRoom(roomId, { type: 'PLAYER_LIST_UPDATE', payload: { players: playersList.map(p=>({id: p.firebaseUID, name:p.playerName, ticketCount: p.ticketCount, isOnline: p.isOnline})) } }, ws);
                     
                     } catch (error) {
-                        console.error(`PLAYER_JOIN_ROOM Error for room ${roomId}, player ${firebaseUID}:`, error);
+                        console.error(`[PLAYER_JOIN_ROOM] CRITICAL ERROR for room ${roomId}, player ${firebaseUID}:`, error);
+                        // Log the error object itself for more details if possible
+                        console.error("[PLAYER_JOIN_ROOM] Full error object:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
                         sendMessageToClient(ws, { type: 'ERROR', payload: { message: `Server error joining room: ${error.message}` } });
                     }
                     break;
-                }                
+                }
                 case 'PLAYER_REQUEST_TICKET': { 
                     if (!connectionInfo || connectionInfo.type !== 'player') return;
                     const { roomId, playerId: firebaseUID } = connectionInfo; 
