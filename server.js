@@ -586,7 +586,7 @@ wss.on('connection', (ws) => {
                     const claimId = generateUniqueId();
                     const claimData = { userId: firebaseUID, playerName: ticketDataFromDb.playerName, roomId, ticketId, prizeRuleId, prizeName: ruleToClaim.name, status: "pending_admin_approval", serverValidationResult: isValid, claimTimestamp: FieldValue.serverTimestamp()};
                     await db.collection('prizeClaimsAudit').doc(claimId).set(claimData);
-                    sendMessageToClient(ws, { type: 'PLAYER_CLAIM_SUBMITTED', payload: { claimId, prizeName: ruleToClaim.name, status: 'pending_admin_approval' } });
+                    sendMessageToClient(ws, { type: 'PLAYER_CLAIM_SUBMITTED', payload: { claimId, prizeName: ruleToClaim.name, status: 'pending_admin_approval', ticketId: ticketId, clientTempId: payload.clientTempId } });
                     const adminWs = getAdminWs(roomId); if (adminWs) sendMessageToClient(adminWs, { type: 'NEW_PRIZE_CLAIM', payload: {id: claimId, ...claimData} });
                     break;
                 }
